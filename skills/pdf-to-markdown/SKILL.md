@@ -12,10 +12,11 @@ tools:
 
 Executable Interfaces:
 
-Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+Send the required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
 - `pdf-to-markdown._rtx.interface.scripts-check-marker-models` — Check whether required Marker/Surya models are downloaded and cached locally.
   - Caller: `pdf-to-markdown`
   - Version: 1
+  - Security level: 0
   - Alternative: `owner`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": [], "stdin": null}
@@ -23,6 +24,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `pdf-to-markdown._rtx.interface.scripts-fetch-arxiv-source` — Download and extract the LaTeX source tarball for a paper from arXiv.
   - Caller: `pdf-to-markdown`
   - Version: 1
+  - Security level: 2
   - Alternative: `owner`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["arxiv-id", "output-dir"], "stdin": null}

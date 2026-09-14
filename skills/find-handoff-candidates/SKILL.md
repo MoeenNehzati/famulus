@@ -9,10 +9,11 @@ description: >-
 
 Executable Interfaces:
 
-Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+Send the required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
 - `find-handoff-candidates._rtx.interface.calibrate` — Re-derive reference median/p75/p90 gap-size statistics per host from real transcripts in a lookback window, to check whether scan's default thresholds still make sense. Diagnostic only -- does not modify any parser file; read the output and edit the relevant parser's default_threshold by hand if it suggests new numbers.
   - Caller: `find-handoff-candidates`
   - Version: 1
+  - Security level: 0
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--days": "N"}, "positionals": [], "stdin": null}
@@ -20,6 +21,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `find-handoff-candidates._rtx.interface.scan` — Scan session transcripts across every configured host (default: trailing 2 days), and report sessions whose conversation since their last completed handoff exceeds a per-host threshold, using mechanical extraction only (no LLM judgment).
   - Caller: `find-handoff-candidates`
   - Version: 1
+  - Security level: 0
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--date": "YYYY-MM-DD", "--days": "N", "--min-gap-chars": "N"}, "positionals": [], "stdin": null}

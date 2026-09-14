@@ -9,7 +9,7 @@ description: >-
 
 ### Managed setup
 
-When first exposed to this skill in a session, invoke `famulus_dispatcher.invoke` once with:
+When first exposed to this skill in a session, invoke `famulus_dispatcher.invoke_security_2` once with:
 
 ```json
 {
@@ -28,10 +28,11 @@ Do not repeat this initial call during the session. Obtain permission before car
 
 Executable Interfaces:
 
-Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+Send the required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
 - `cloud-files._rtx.interface.lists-delete` — Delete a file from cloud storage under the lists/ directory.
   - Caller: `cloud-files`
   - Version: 1
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["lists/<path>"], "stdin": null}
@@ -39,6 +40,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `cloud-files._rtx.interface.lists-read` — Read a file from cloud storage under the lists/ directory.
   - Caller: `cloud-files`
   - Version: 1
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["lists/<path>"], "stdin": null}
@@ -46,6 +48,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `cloud-files._rtx.interface.lists-write` — Write content (from stdin) to a file in cloud storage under the lists/ directory.
   - Caller: `cloud-files`
   - Version: 1
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["lists/<path>"], "stdin": null}
@@ -53,6 +56,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `cloud-files._rtx.interface.plans-delete` — Delete a file from cloud storage under the plans/ directory.
   - Caller: `cloud-files`
   - Version: 1
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["plans/<path>"], "stdin": null}
@@ -60,6 +64,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `cloud-files._rtx.interface.plans-read` — Read a file from cloud storage under the plans/ directory.
   - Caller: `cloud-files`
   - Version: 1
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["plans/<path>"], "stdin": null}
@@ -67,6 +72,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `cloud-files._rtx.interface.plans-write` — Write content (from stdin) to a file in cloud storage under the plans/ directory.
   - Caller: `cloud-files`
   - Version: 1
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["plans/<path>"], "stdin": null}
@@ -74,6 +80,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `cloud-files._rtx.interface.write-config` — Write <CONFIG>/cloud-files/config.json with the given remote LLM root. Owned by cloud-files.
   - Caller: `cloud-files`
   - Version: 1
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--dry-run": true, "--home": "dir", "--remote-llm-root": "path"}, "positionals": [], "stdin": null}

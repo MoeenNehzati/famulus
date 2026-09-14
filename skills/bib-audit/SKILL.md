@@ -9,10 +9,11 @@ description: >-
 
 Executable Interfaces:
 
-Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+Send the required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
 - `bib-audit._rtx.interface.scripts-bib-similarity` — Detect duplicate and version-pair candidates in a .bib file by scoring all entry pairs.
   - Caller: `bib-audit`
   - Version: 1
+  - Security level: 0
   - Alternative: `owner`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--threshold": "0.3"}, "positionals": ["file.bib"], "stdin": null}
@@ -20,6 +21,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `bib-audit._rtx.interface.scripts-bib-validate-bibtex` — Validate a BibTeX/natbib .bib file for syntax errors and missing required fields (not for biblatex projects).
   - Caller: `bib-audit`
   - Version: 1
+  - Security level: 0
   - Alternative: `owner`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["file.bib"], "stdin": null}

@@ -10,10 +10,11 @@ description: >-
 
 Executable Interfaces:
 
-Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+Send the required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
 - `math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph` — Render offline interactive HTML from self-contained canonical graph JSON without reading or rewriting source material.
   - Caller: `math-dependency-graph`
   - Version: 2
+  - Security level: 2
   - Alternative: `owner`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--html-out": "path", "--reduce-transitive-edges": true}, "positionals": ["source.json"], "stdin": null}
@@ -21,6 +22,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `math-dependency-graph._rtx.interface.scripts-finalize-extraction` — Finalize a semantic graph draft into validated self-contained canonical JSON with embedded MathJax macros and presentation metadata.
   - Caller: `math-dependency-graph`
   - Version: 1
+  - Security level: 2
   - Alternative: `owner`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--draft": "draft.json", "--label-map": "labels.json", "--output": "canonical.json", "--tex-entrypoint": "entrypoint.tex"}, "positionals": [], "stdin": null}
@@ -28,6 +30,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `math-dependency-graph._rtx.interface.scripts-read-tex-labels` — Resolve TeX label numbering by compiling the document, so numbers match what the paper prints instead of being derived by inspection.
   - Caller: `math-dependency-graph`
   - Version: 1
+  - Security level: 2
   - Alternative: `owner`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--out": "path"}, "positionals": ["entrypoint.tex"], "stdin": null}
@@ -35,6 +38,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `math-dependency-graph._rtx.interface.scripts-serve-graph` — Start graph HTML from a local directory in a no-cache background server and return readiness metadata for repeated browser inspection.
   - Caller: `math-dependency-graph`
   - Version: 1
+  - Security level: 2
   - Alternative: `owner`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--directory": "path", "--host": "host", "--port": "port"}, "positionals": [], "stdin": null}

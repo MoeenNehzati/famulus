@@ -9,10 +9,11 @@ description: >-
 
 Executable Interfaces:
 
-Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+Send the required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
 - `node-certify._rtx.interface.certify` — Certify exact v6 module closures by skipping current nodes and appending signed certificate histories for stale nodes at an explicit reviewed repository commit.
   - Caller: `node-certify`
   - Version: 2
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--allow-non-atomic": true, "--json": true, "--reviewed-commit": "COMMIT", "--reviewed-repository": "ROOT"}, "positionals": ["certify", "target..."], "stdin": null}
@@ -20,6 +21,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `node-certify._rtx.interface.semantic-audit-scheduler` — Initialize or transition one locked semantic-audit run.
   - Caller: `node-certify`
   - Version: 1
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["OPERATION", "PREFIX", "TASK_ID", "options"], "stdin": null}
@@ -27,6 +29,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `node-drift._rtx.interface.drift-status` — Read signed certificate currentness, exact structured drift causes, and the dependency-first stale worklist for exact or installed v6 modules without writing certification state.
   - Caller: `node-certify`
   - Version: 4
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--all": true, "--dag-file": "PATH", "--json": true, "--repo-root": "ROOT", "--skill-root": "ROOT"}, "positionals": ["target..."], "stdin": null}

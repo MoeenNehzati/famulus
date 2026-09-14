@@ -132,7 +132,7 @@ outer MCP request, not the blocked child. `setup_busy` identifies the active
 flow, its recorded owner process, and the exact guarded recovery interface.
 
 For `setup_required` or `setup_managed`, pass the returned `manager` object
-unchanged to `famulus_dispatcher.invoke`; it includes the original caller.
+unchanged to `famulus_dispatcher.invoke_security_2`; it includes the original caller.
 
 The outer workflow may already have done work before reaching the blocked
 child. Retrying the outer request after setup can repeat that work; nested
@@ -168,7 +168,8 @@ runs that prerequisite first in the same finite flow. Production ownership is:
 A Markdown setup is an active manager step while its instructions run. Ordinary
 managed calls would therefore see `setup_busy`. For only the reviewed helper
 calls named by the current Markdown production binding, the caller passes the
-current flow id as `setup_flow_id` to `famulus_dispatcher.invoke`. MCP asks the
+current flow id as `setup_flow_id` to the exact security-tier tool declared for
+that interface. MCP asks the
 manager to authorize that exact `(flow, interface, version)` and then executes
 the already-authorized dispatcher target. No nested setup flow is created, and
 calls without `setup_flow_id` keep the normal preflight behavior.
@@ -216,7 +217,9 @@ state. MCP never reads or writes this ledger directly; setup-interface-manager
 remains its sole authority.
 
 The ledger does not say whether the shared Famulus MCP process is currently
-reachable. Live `famulus_dispatcher.invoke` availability is the MCP readiness signal, and
+reachable. Live `famulus_dispatcher.invoke_security_0`,
+`famulus_dispatcher.invoke_security_1`, or `famulus_dispatcher.invoke_security_2`
+availability is the MCP readiness signal, and
 MCP startup does not overwrite the setup ledger. A malformed or unsupported
 ledger fails closed instead of being treated as ready.
 

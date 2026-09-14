@@ -17,7 +17,7 @@ DISPATCHER_CORE = """\
 ## Skill interfaces
 For `BEGIN BLUEPRINT INTERFACES`, do not invoke private scripts directly. Call `Executable Interfaces` through the `famulus_dispatcher` MCP server using invocation metadata and `Arguments JSON`. `Instruction Interfaces` are LLM-readable instructions; follow them directly.
 
-Use `famulus_dispatcher.invoke` only when an executable interface is needed.\
+Use it only when an executable interface is needed: `famulus_dispatcher.invoke_security_x` for its `Security level: x`, with `caller`, `interface`, `version`, and `Arguments JSON`; never use another tier.\
 """
 
 

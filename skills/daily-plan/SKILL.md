@@ -9,10 +9,11 @@ description: >-
 
 Executable Interfaces:
 
-Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+Send the required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
 - `daily-plan._rtx.interface.mutate-plan` — Apply a mutation (hide, show, keep, remove, mark-done, reject, set-deadline, add) to a dated plan and display the refreshed result. Defaults to today when --date is omitted.
   - Caller: `daily-plan`
   - Version: 1
+  - Security level: 2
   - Alternative: `indexed-or-add`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--date": "M-D-YY|YYYY-MM-DD"}, "positionals": ["hide|show|keep|remove|mark-done|reject|add", "actions|triage", "indices-or-item-id"], "stdin": null}
@@ -24,6 +25,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `daily-plan._rtx.interface.orchestrate` — Generate today's plan (or show the existing one, refreshing its Todo/Triage blocks from current list state). Pass --forced to regenerate even if a plan already exists.
   - Caller: `daily-plan`
   - Version: 1
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": [], "stdin": null}
@@ -35,6 +37,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `daily-plan._rtx.interface.render-plan` — Extract or reassemble sections of a plan file for rendering.
   - Caller: `daily-plan`
   - Version: 1
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["extract|reassemble", "plan-file", "dir"], "stdin": null}

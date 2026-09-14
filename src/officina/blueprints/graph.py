@@ -17,6 +17,7 @@ import jsonschema
 import yaml
 
 from ..common.atomic_files import AtomicWriteError, read_regular_file_bytes
+from ..common.blueprint import interface_security_levels as derive_interface_security_levels
 from .inventory import (
     BlueprintDocument,
     BlueprintInventoryError,
@@ -389,6 +390,7 @@ class RepositoryBlueprintGraph:
         default_factory=dict
     )
     managed_setups: Mapping[str, ManagedSetup] = field(default_factory=dict)
+    interface_security_levels: Mapping[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -2746,6 +2748,43 @@ def _authority_claims(
     return tuple(claims)
 
 
+def _derived_interface_security_levels(
+    source_interfaces: Mapping[str, InterfaceExport],
+    exports: Mapping[str, InterfaceExport],
+    interface_uses: Mapping[str, tuple[tuple[str, int], ...]],
+    source_modules: Mapping[str, str],
+    authority_claims: tuple[tuple[str, str, str, re.Pattern[str] | None], ...],
+) -> Mapping[str, int]:
+    """Adapt repository graph records to the shared derived-security API."""
+
+    interface_sources = {interface_id: interface_id for interface_id in source_interfaces}
+    interface_sources.update(
+        {
+            interface_id: export.source_interface_id or interface_id
+            for interface_id, export in exports.items()
+        }
+    )
+    declarations = {
+        interface_id: export.declaration
+        for interface_id, export in source_interfaces.items()
+    }
+    interface_modules = {
+        interface_id: source_modules[export.source_node_id]
+        for interface_id, export in source_interfaces.items()
+        if export.source_node_id is not None
+    }
+    try:
+        return derive_interface_security_levels(
+            declarations,
+            interface_sources,
+            interface_uses,
+            interface_modules,
+            authority_claims,
+        )
+    except ValueError as exc:
+        raise BlueprintGraphError(str(exc)) from exc
+
+
 def _validate_interface_contract(
     interface_id: str,
     declaration: Mapping[str, Any],
@@ -4653,6 +4692,13 @@ def _load_v6_repository_blueprint_graph(
         )
     )
     _reject_export_cycles(exports, export_edge_tuple)
+    security_levels = _derived_interface_security_levels(
+        source_interfaces,
+        exports,
+        interface_uses,
+        source_modules,
+        _authority_claims(modules),
+    )
     return RepositoryBlueprintGraph(
         nodes=dict(sorted(nodes.items())),
         node_edges=tuple(sorted(node_edges, key=_edge_key)),
@@ -4683,6 +4729,7 @@ def _load_v6_repository_blueprint_graph(
         interface_uses=interface_uses,
         setup_requirements=setup_requirements,
         managed_setups=managed_setups,
+        interface_security_levels=security_levels,
     )
 
 

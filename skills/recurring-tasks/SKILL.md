@@ -10,10 +10,11 @@ description: >-
 
 Executable Interfaces:
 
-Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+Send the required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
 - `recurring-tasks._rtx.interface.scripts-disable` — Disable a job by setting enabled: false in jobs.yaml and syncing native scheduler entries.
   - Caller: `recurring-tasks`
   - Version: 1
+  - Security level: 2
   - Alternative: `owner`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["name"], "stdin": null}
@@ -21,6 +22,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `recurring-tasks._rtx.interface.scripts-enable` — Enable a job by setting enabled: true in jobs.yaml and syncing native scheduler entries.
   - Caller: `recurring-tasks`
   - Version: 1
+  - Security level: 2
   - Alternative: `owner`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["name"], "stdin": null}
@@ -28,6 +30,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `recurring-tasks._rtx.interface.scripts-healthcheck` — Run pre-flight and per-job health checks for all enabled recurring tasks and return nonzero when any check fails.
   - Caller: `recurring-tasks`
   - Version: 1
+  - Security level: 2
   - Alternative: `owner`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": [], "stdin": null}
@@ -35,6 +38,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `recurring-tasks._rtx.interface.scripts-remove-context` — Remove the shared native set only when the selected recurring config root is its current owner.
   - Caller: `recurring-tasks`
   - Version: 1
+  - Security level: 2
   - Alternative: `owner`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": [], "stdin": null}
@@ -42,6 +46,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `recurring-tasks._rtx.interface.scripts-setup` — Capture the dispatcher-selected Python and plugin root, initialize recurring-owned state without default jobs, and reconcile the shared scheduler set.
   - Caller: `recurring-tasks`
   - Version: 2
+  - Security level: 2
   - Alternative: `owner`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": [], "stdin": null}
@@ -49,6 +54,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `recurring-tasks._rtx.interface.scripts-status` — List active recurring scheduler entries, next fire times, and service status.
   - Caller: `recurring-tasks`
   - Version: 1
+  - Security level: 2
   - Alternative: `owner`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": [], "stdin": null}
@@ -56,6 +62,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `recurring-tasks._rtx.interface.scripts-sync` — Regenerate native scheduler entries from jobs.yaml.
   - Caller: `recurring-tasks`
   - Version: 1
+  - Security level: 2
   - Alternative: `owner`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": [], "stdin": null}
@@ -63,6 +70,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `recurring-tasks._rtx.interface.scripts-test` — Trigger a job immediately through the native scheduler, then wait (bounded) for its run record and report whether the job actually succeeded.
   - Caller: `recurring-tasks`
   - Version: 1
+  - Security level: 2
   - Alternative: `owner`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["name"], "stdin": null}
@@ -70,6 +78,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `recurring-tasks._rtx.interface.scripts-view-logs` — Tail the run log for a job (default 50 lines).
   - Caller: `recurring-tasks`
   - Version: 1
+  - Security level: 2
   - Alternative: `owner`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--lines": "N"}, "positionals": ["job-name"], "stdin": null}

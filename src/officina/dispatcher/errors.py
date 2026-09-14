@@ -601,6 +601,18 @@ DISPATCHER_ERROR_SPECS: Mapping[str, ErrorSpec] = MappingProxyType(
             context_fields=frozenset({"interface_id"}),
             payload_fields=frozenset({"interface_id"}),
         ),
+        "D72": ErrorSpec(
+            code="dispatcher.security_level_unavailable",
+            message="The dispatcher could not derive a security level for `{interface_id}`.",
+            context_fields=frozenset({"interface_id"}),
+            payload_fields=frozenset({"interface_id"}),
+        ),
+        "D73": ErrorSpec(
+            code="dispatcher.security_level_mismatch",
+            message="Interface `{interface_id}` requires security level {actual_level}, not {requested_level}.",
+            context_fields=frozenset({"interface_id", "requested_level", "actual_level"}),
+            payload_fields=frozenset({"interface_id", "requested_level", "actual_level"}),
+        ),
         "R01": ErrorSpec(
             code="dispatcher.runner_request_invalid",
             message="Python interface runner requires a gateway path and process entry.",
@@ -872,8 +884,8 @@ class DispatcherError(InvocationError):
                 f"missing context for {entry_id}: {', '.join(sorted(missing))}"
             )
         integer_fields = {
-            "available_version", "interface_version", "major", "minor",
-            "returncode", "schema_version",
+            "actual_level", "available_version", "interface_version", "major",
+            "minor", "requested_level", "returncode", "schema_version",
         }
         for field_name, value in format_context.items():
             valid = (

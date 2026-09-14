@@ -30,16 +30,31 @@ dynamic setup check described below between authorization and binding.
 ## Invocation
 
 The shared `famulus_dispatcher` MCP server resolves the current plugin package and invokes
-Dispatcher internally. Its `invoke` tool accepts the generated projection:
+Dispatcher internally. It exposes exactly three dispatch tools:
+`invoke_security_0`, `invoke_security_1`, and `invoke_security_2`. Each generated
+executable-interface block declares `Security level: <n>`; call only the tool with
+that same suffix. The selected tool accepts the generated projection:
 
 ```json
 {"caller":"<top-level-skill>","interface":"<module>.interface.<name>","version":1,"arguments":{"positionals":[],"options":{},"stdin":null},"dry_run":false}
 ```
 
+| Level | Derived behavior |
+|---|---|
+| 0 | Read-only. |
+| 1 | Reads and writes only inside the declaring module's Famulus-owned filesystem authority. |
+| 2 | General read/write behavior, including external requests or writes outside that authority. |
+
 Set `dry_run` to `true` to authorize and compile without launching the gateway. The
 result is JSON containing the canonical caller and target IDs, selected source
 interface, compiled argv, working directory, Python entrypoint, stdin decision,
 and warnings. Failures use the tool's structured dispatcher result.
+
+Before authorization or gateway execution, the MCP boundary derives the selected
+interface's level from its current dispatch blueprint. A different tier fails with
+`dispatcher.security_level_mismatch`; an unavailable or invalid derivation fails
+closed with `dispatcher.security_level_unavailable`. The level is derived, not a
+persisted blueprint field.
 
 Every non-dry MCP result also returns a `trace_id`. Best-effort timing spans for
 Dispatcher processes and Python interface bodies are stored under
@@ -58,8 +73,8 @@ as its identity.
 ## MCP result audiences
 
 Tool calls should remain visible while output intended for the assistant does
-not fill the user's result preview. Both `invoke` and `invoke_and_render` apply
-the same stream filter at the MCP boundary:
+not fill the user's result preview. Every public security-tier tool applies the
+same stream filter at the MCP boundary:
 
 | Declared stream audience | Text `content` | `structuredContent.result` |
 |---|---|---|
@@ -99,9 +114,7 @@ no preview text:
 Consumers must read the structured result for machine output, status, dispatcher
 errors, dry-run results and setup continuations. Failed calls use the same
 filter; failure does not trigger a full-result text dump. A machine stdout
-declaration does not suppress separately declared human/both stderr. Declared
-renderers on `invoke_and_render` still receive the complete structured payload
-for explicit rendering.
+declaration does not suppress separately declared human/both stderr.
 
 Audience declarations express intended recipients. Use `machine` for query
 data, receipts, paths, hashes, raw logs and diagnostics the assistant interprets
@@ -211,7 +224,7 @@ application errors keep their existing behavior. Standalone chains still gate ac
 but only MCP renders setup continuations.
 
 The `manager` object returned for `setup_required` or `setup_managed` is a
-complete `famulus_dispatcher.invoke` request and must be used unchanged.
+complete `famulus_dispatcher.invoke_security_2` request and must be used unchanged.
 
 The outer process may already have done work before reaching a blocked nested
 call. Retrying the outer invocation can repeat that work; this is not a promise

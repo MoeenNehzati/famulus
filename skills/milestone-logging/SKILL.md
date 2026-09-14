@@ -8,10 +8,11 @@ description: Use when starting or completing substantive agent work that needs d
 
 Executable Interfaces:
 
-Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+Send the required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
 - `milestone-logging._rtx.interface.list-sessions` — List known milestone sessions and label counts as log files.
   - Caller: `milestone-logging`
   - Version: 1
+  - Security level: 0
   - Alternative: `list-sessions`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": [], "stdin": null}
@@ -19,6 +20,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `milestone-logging._rtx.interface.read-run-json` — Return one durable run as structured JSON with all retained typed metadata.
   - Caller: `milestone-logging`
   - Version: 1
+  - Security level: 0
   - Alternative: `read-run-json`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["SAFE_RUN_ID"], "stdin": null}
@@ -26,6 +28,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `milestone-logging._rtx.interface.record-completion` — Append completion with session-retained typed metadata and an optional additive run mirror; RESULT is limited to 256 serialized JSON bytes, including quotes and escaping, to keep each JSONL record within its fixed 3,800-byte budget.
   - Caller: `milestone-logging`
   - Version: 1
+  - Security level: 2
   - Alternative: `record-completion`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--attempt": "NON_NEGATIVE_INTEGER", "--event": "EVENT", "--evidence": "PATH", "--role": "NONEMPTY_ROLE", "--run": "SAFE_RUN_ID", "--state": "STATE", "--step": "NON_NEGATIVE_INTEGER", "--task": "TASK"}, "positionals": ["RESULT"], "stdin": null}
@@ -33,6 +36,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `milestone-logging._rtx.interface.record-progress` — Append progress with typed metadata retained in the session; DOING and PREV are each limited to 256 serialized JSON bytes, including quotes and escaping, to keep each JSONL record within its fixed 3,800-byte budget; run only adds identity fields and an identical journal mirror.
   - Caller: `milestone-logging`
   - Version: 1
+  - Security level: 2
   - Alternative: `record-progress`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--attempt": "NON_NEGATIVE_INTEGER", "--event": "EVENT", "--evidence": "PATH", "--role": "NONEMPTY_ROLE", "--run": "SAFE_RUN_ID", "--state": "STATE", "--step": "NON_NEGATIVE_INTEGER", "--task": "TASK"}, "positionals": ["DOING", "PREV"], "stdin": null}
@@ -40,6 +44,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `milestone-logging._rtx.interface.run-path` — Validate a run identifier and print its journal path without appending.
   - Caller: `milestone-logging`
   - Version: 1
+  - Security level: 0
   - Alternative: `run-path`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["SAFE_RUN_ID"], "stdin": null}
@@ -47,6 +52,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `milestone-logging._rtx.interface.session-path` — Print the selected session path without appending.
   - Caller: `milestone-logging`
   - Version: 1
+  - Security level: 0
   - Alternative: `session-path`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": [], "stdin": null}
@@ -54,6 +60,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `milestone-logging._rtx.interface.show-latest-session` — Render the latest session and all retained typed metadata; optional slow adds annotations only.
   - Caller: `milestone-logging`
   - Version: 1
+  - Security level: 0
   - Alternative: `show-latest-session`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--slow": "POSITIVE_DECIMAL_SECONDS"}, "positionals": [], "stdin": null}
@@ -61,6 +68,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `milestone-logging._rtx.interface.show-run` — Render one durable run as text with all retained typed metadata.
   - Caller: `milestone-logging`
   - Version: 1
+  - Security level: 0
   - Alternative: `show-run`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["SAFE_RUN_ID"], "stdin": null}
@@ -68,6 +76,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `milestone-logging._rtx.interface.show-session` — Render one exact session and retained typed metadata; optional slow adds annotations only.
   - Caller: `milestone-logging`
   - Version: 1
+  - Security level: 0
   - Alternative: `show-session`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--slow": "POSITIVE_DECIMAL_SECONDS"}, "positionals": ["SESSION"], "stdin": null}

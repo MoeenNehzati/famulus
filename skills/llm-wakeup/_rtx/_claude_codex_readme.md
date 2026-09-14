@@ -435,7 +435,7 @@ uses_interfaces:
   version: 1
 ```
 
-The caller then invokes `famulus_dispatcher.invoke` with `caller: CALLER`,
+The caller then invokes `famulus_dispatcher.invoke_security_2` with `caller: CALLER`,
 `version: 1`, and one of these interface/argument pairs. The binding injects
 the corresponding `auto`, `infer`, or `schedule` subcommand:
 

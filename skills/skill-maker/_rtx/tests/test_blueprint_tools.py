@@ -163,6 +163,7 @@ def test_generated_interface_block_renders_only_direct_gateway_uses(syncer) -> N
             ),
         },
         source_interfaces={},
+        interface_security_levels={process: 0, owner: 0, unused: 0},
         node_edges=(
             SimpleNamespace(
                 relation="uses-source",
@@ -215,6 +216,7 @@ def test_generated_interface_block_renders_only_direct_gateway_uses(syncer) -> N
     assert rendered.count("`provider.interface.run`") == 1
     assert rendered.count("`consumer.interface.owner`") == 1
     assert "Caller: `consumer`" in rendered
+    assert rendered.count("Security level: 0") == 2
     assert instructions in rendered
     assert unused not in rendered
     assert "provider.interface.transitive" not in rendered
@@ -234,6 +236,11 @@ def test_generated_interface_block_renders_only_direct_gateway_uses(syncer) -> N
         for edge in original_edges
     )
     with pytest.raises(syncer.BlueprintError, match="use version"):
+        syncer.generated_interface_block("consumer", graph)
+
+    graph.node_edges = original_edges
+    graph.interface_security_levels = {}
+    with pytest.raises(syncer.BlueprintError, match="missing derived security level"):
         syncer.generated_interface_block("consumer", graph)
 
 
@@ -261,6 +268,7 @@ def test_generated_interface_block_rejects_blank_direct_use_description(syncer) 
             )
         },
         source_interfaces={},
+        interface_security_levels={interface_id: 0},
     )
 
     with pytest.raises(syncer.BlueprintError, match="description"):
@@ -285,6 +293,7 @@ def test_generated_interface_block_rejects_unresolved_direct_use(syncer) -> None
         ),
         exports={},
         source_interfaces={},
+        interface_security_levels={},
     )
 
     with pytest.raises(syncer.BlueprintError, match="unresolved"):
@@ -384,6 +393,7 @@ def _managed_gate_graph(
             )
         },
         source_interfaces={},
+        interface_security_levels={setup_interface: 0},
         managed_setups=(
             {
                 setup_interface: SimpleNamespace(
@@ -411,7 +421,7 @@ def test_generated_interface_block_includes_one_managed_setup_call(syncer) -> No
     assert '"positionals": []' in block
     assert '"options": {}' in block
     assert '"stdin": null' in block
-    assert "invoke `famulus_dispatcher.invoke` once" in block
+    assert "invoke `famulus_dispatcher.invoke_security_0` once" in block
     assert "Do not repeat this initial call during the session." in block
     assert "Obtain permission before carrying out setup" in block
     assert "follow the returned setup-manager instructions exactly" in block
@@ -447,6 +457,7 @@ def test_generated_interface_block_uses_setup_version(syncer) -> None:
             )
         },
         source_interfaces={},
+        interface_security_levels={setup_interface: 0},
         managed_setups={
             setup_interface: SimpleNamespace(
                 setup_interface=setup_interface,
@@ -682,6 +693,7 @@ def _blueprints_with_unprojectable_usage(tmp_path: Path, syncer):
             ),
         },
         source_interfaces={},
+        interface_security_levels={interface_id: 0},
     )
     return {
         "consumer": syncer.ModuleBlueprint(

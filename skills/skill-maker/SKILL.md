@@ -10,10 +10,11 @@ description: >-
 
 Executable Interfaces:
 
-Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+Send the required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
 - `skill-maker._rtx.interface.sync-blueprints` — Validate every skill blueprint and either check or refresh generated SKILL.md interface blocks and the runtime-dependency manifest.
   - Caller: `skill-maker`
   - Version: 1
+  - Security level: 2
   - Alternative: `sync`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": [], "stdin": null}
@@ -25,6 +26,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `standards.interface.query-standard` — Query one explicit standard and its complete pinned import closure.
   - Caller: `skill-maker`
   - Version: 1
+  - Security level: 2
   - Alternative: `standard-and-options`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--facts-json": "JSON", "--query-json": "JSON", "--refs-json": "JSON", "--repo-root": "PATH", "--view": "requirements|context|evidence|remedies|full"}, "positionals": ["standard-path"], "stdin": null}

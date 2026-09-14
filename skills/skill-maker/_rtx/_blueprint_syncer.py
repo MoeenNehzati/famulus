@@ -213,6 +213,11 @@ def generated_setup_gate(
         return []
 
     managed = managed_entries[0]
+    security_level = _interface_security_level(
+        managed.setup_interface,
+        setup_export,
+        repository_graph,
+    )
     invocation = {
         "caller": module_id,
         "interface": managed.setup_interface,
@@ -222,7 +227,7 @@ def generated_setup_gate(
     return [
         "### Managed setup",
         "",
-        "When first exposed to this skill in a session, invoke `famulus_dispatcher.invoke` once with:",
+        f"When first exposed to this skill in a session, invoke `famulus_dispatcher.invoke_security_{security_level}` once with:",
         "",
         "```json",
         *json.dumps(invocation, indent=2).splitlines(),
@@ -230,6 +235,21 @@ def generated_setup_gate(
         "",
         "Do not repeat this initial call during the session. Obtain permission before carrying out setup, then follow the returned setup-manager instructions exactly. If the result is busy or failed, stop and report it.",
     ]
+
+
+def _interface_security_level(
+    interface_id: str,
+    export: Any,
+    repository_graph: RepositoryBlueprintGraph,
+) -> int:
+    """Return the graph-derived level for one exported interface."""
+
+    source_id = getattr(export, "source_interface_id", None) or interface_id
+    levels = getattr(repository_graph, "interface_security_levels", None)
+    level = levels.get(source_id) if isinstance(levels, Mapping) else None
+    if type(level) is not int or level not in {0, 1, 2}:
+        raise BlueprintError(f"{interface_id}: missing derived security level")
+    return level
 
 
 def generated_interface_block(
@@ -266,6 +286,7 @@ def generated_interface_block(
                     required_version,
                     spec.get("usage"),
                     binding,
+                    _interface_security_level(export_id, export, repository_graph),
                 )
             )
         elif isinstance(description, str) and description.strip():
@@ -284,13 +305,14 @@ def generated_interface_block(
         lines.extend([
             "Executable Interfaces:",
             "",
-            "Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.",
+            "Send the required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.",
         ])
-        for interface_name, description, version, usage, binding in process_exports:
+        for interface_name, description, version, usage, binding, security_level in process_exports:
             lines.extend([
                 f"- `{interface_name}` — {description}",
                 f"  - Caller: `{module_id}`",
                 f"  - Version: {version}",
+                f"  - Security level: {security_level}",
             ])
             patterns = binding.get("patterns", [binding])
             for pattern in patterns:

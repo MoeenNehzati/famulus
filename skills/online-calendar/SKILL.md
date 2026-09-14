@@ -9,7 +9,7 @@ description: >-
 
 ### Managed setup
 
-When first exposed to this skill in a session, invoke `famulus_dispatcher.invoke` once with:
+When first exposed to this skill in a session, invoke `famulus_dispatcher.invoke_security_2` once with:
 
 ```json
 {
@@ -28,10 +28,11 @@ Do not repeat this initial call during the session. Obtain permission before car
 
 Executable Interfaces:
 
-Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+Send the required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
 - `online-calendar._rtx.interface.scripts-gcal` — Query or modify Google Calendar events via the Python calendar CLI (agenda, search, create, update, delete, etc.).
   - Caller: `online-calendar`
   - Version: 1
+  - Security level: 2
   - Alternative: `token-or-calendars`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["token"], "stdin": null}

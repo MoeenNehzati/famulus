@@ -8,10 +8,11 @@ description: Use only when a generated managed-setup gate, a Famulus setup-requi
 
 Executable Interfaces:
 
-Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+Send the required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
 - `setup-interface-manager._rtx.interface.authorize` — Resume only unmanaged or ready targets and atomically claim every ready managed receipt.
   - Caller: `setup-interface-manager`
   - Version: 1
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["TARGET_INTERFACE", "ORIGINAL_CALLER", "ORIGINAL_INTERFACE", "ORIGINAL_VERSION"], "stdin": null}
@@ -19,6 +20,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `setup-interface-manager._rtx.interface.begin` — Begin exactly one setup or teardown flow for a managed root and redacted continuation.
   - Caller: `setup-interface-manager`
   - Version: 1
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["OPERATION", "ROOT_SETUP", "ORIGINAL_CALLER", "ORIGINAL_INTERFACE", "ORIGINAL_VERSION", "FLOW_ID", "OWNER_HOST", "OWNER_PID", "OWNER_STARTED_AT"], "stdin": null}
@@ -26,6 +28,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `setup-interface-manager._rtx.interface.invalidate` — Invalidate one setup receipt and its live managed dependents only while idle.
   - Caller: `setup-interface-manager`
   - Version: 1
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["SETUP_INTERFACE"], "stdin": null}
@@ -33,6 +36,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `setup-interface-manager._rtx.interface.recover` — Retry by verifying first, or cancel without guessing the current external action's completion.
   - Caller: `setup-interface-manager`
   - Version: 1
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["FLOW_ID", "ACTION"], "stdin": null}
@@ -40,6 +44,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `setup-interface-manager._rtx.interface.run-markdown` — Return only the finite map's exact Markdown instructions and await independent settlement.
   - Caller: `setup-interface-manager`
   - Version: 1
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["FLOW_ID", "INTERFACE"], "stdin": null}
@@ -47,6 +52,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `setup-interface-manager._rtx.interface.run-python` — Run the exact current Python action, its verifier, and the receipt transition in one call.
   - Caller: `setup-interface-manager`
   - Version: 1
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["FLOW_ID", "INTERFACE"], "stdin": null}
@@ -54,6 +60,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `setup-interface-manager._rtx.interface.settle` — Independently verify and settle only the exact current Markdown action.
   - Caller: `setup-interface-manager`
   - Version: 1
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["FLOW_ID", "INTERFACE"], "stdin": null}
@@ -61,6 +68,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `setup-interface-manager._rtx.interface.status` — Return unmanaged, ready, setup-required, or setup-busy without mutating claims.
   - Caller: `setup-interface-manager`
   - Version: 1
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["TARGET_INTERFACE"], "stdin": null}
@@ -68,6 +76,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `setup-interface-manager._rtx.interface.teardown-all` — Tear down all valid managed setup receipts in the selected context.
   - Caller: `setup-interface-manager`
   - Version: 1
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": [], "stdin": null}

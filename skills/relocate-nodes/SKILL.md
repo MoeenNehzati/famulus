@@ -8,10 +8,11 @@ description: Use when registered Officina nodes or their owned files must be mov
 
 Executable Interfaces:
 
-Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+Send the required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
 - `relocate-nodes._rtx.interface.build-review-packet` — Group one exhaustive relocation preflight for user-assisted false-positive filtering.
   - Caller: `relocate-nodes`
   - Version: 1
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--output": "OUTPUT", "--report": "REPORT", "--root": "ROOT"}, "positionals": [], "stdin": null}
@@ -19,6 +20,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `relocate-nodes._rtx.interface.relocate` — Preflight or publish one manifest-driven registered-node relocation as one recovery-backed failure-atomic change set.
   - Caller: `relocate-nodes`
   - Version: 2
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--apply": true, "--manifest": "MANIFEST", "--report": "REPORT", "--root": "ROOT"}, "positionals": [], "stdin": null}

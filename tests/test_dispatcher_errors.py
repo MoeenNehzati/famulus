@@ -122,7 +122,7 @@ def test_reduced_cause_requires_allowlist_validation():
 
 
 def test_dispatcher_registry_covers_the_complete_scoped_catalogue():
-    expected = {f"D{index:02}" for index in range(1, 72)} - {"D67"}
+    expected = {f"D{index:02}" for index in range(1, 74)} - {"D67"}
 
     assert {
         entry_id

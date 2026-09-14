@@ -71,7 +71,7 @@ Then invoke email-triage again to process emails from the past week.
 
 ### Check if the recurring job is running
 
-Use `famulus_dispatcher.invoke` with `caller: recurring-tasks`, `version: 1`,
+Use `famulus_dispatcher.invoke_security_2` with `caller: recurring-tasks`, `version: 1`,
 and one of these interface/argument pairs:
 
 - Active timers: `recurring-tasks._rtx.interface.scripts-status` with

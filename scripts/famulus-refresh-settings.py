@@ -14,6 +14,23 @@ import tomllib
 PLUGIN = "famulus@nullkit"
 
 
+def _migrate_codex_dispatcher_tools(value):
+    """Carry the former combined-invoke approval to its security tiers."""
+
+    if not isinstance(value, dict):
+        return value
+    server = value.get("mcp_servers", {}).get("famulus_dispatcher")
+    if not isinstance(server, dict) or not isinstance(server.get("tools"), dict):
+        return value
+    tools = server["tools"]
+    legacy = tools.pop("invoke", None)
+    approval_mode = legacy.get("approval_mode") if isinstance(legacy, dict) else None
+    if isinstance(approval_mode, str):
+        for level in range(3):
+            tools.setdefault(f"invoke_security_{level}", {"approval_mode": approval_mode})
+    return value
+
+
 async def restore_codex(value):
     # Let Codex edit its own TOML, preserving unrelated settings and comments.
     process = await asyncio.create_subprocess_exec(
@@ -85,7 +102,7 @@ def main():
     if not saved:
         return
     if host == "codex":
-        asyncio.run(asyncio.wait_for(restore_codex(saved), timeout=30))
+        asyncio.run(asyncio.wait_for(restore_codex(_migrate_codex_dispatcher_tools(saved)), timeout=30))
         return
     config = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     for key, value in saved.items():

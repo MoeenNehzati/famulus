@@ -119,8 +119,9 @@ schema-versioned receipt ledger at the one absolute `setup-status` path returned
 by `common.interface.famulus-paths-get@1`. In a supported host context that
 getter currently selects `<plugin_data>/setup/status.json`. The ledger records
 verified managed setup state and active lifecycle flow, not whether the MCP
-process is currently reachable; live `famulus_dispatcher.invoke` availability is the MCP
-readiness signal. Claude and Codex roots remain separate, and no pre-existing
+process is currently reachable; live `famulus_dispatcher.invoke_security_0`,
+`famulus_dispatcher.invoke_security_1`, or `famulus_dispatcher.invoke_security_2`
+availability is the MCP readiness signal. Claude and Codex roots remain separate, and no pre-existing
 `~/.assistant-logs` content is migrated or merged.
 
 ### Roots granted to a managed assistant
