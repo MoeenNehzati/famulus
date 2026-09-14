@@ -237,24 +237,16 @@ def _blueprint_paths(
 def _module_root(
     repo_root: Path, path: Path, module_roots: tuple[Path, ...]
 ) -> Path:
-    owners = [root for root in module_roots if path.is_relative_to(root)]
-    if owners:
-        return max(owners, key=lambda root: len(root.parts))
-    return repo_root
+    roots = {root: root for root in module_roots}
+    return next((roots[parent] for parent in (path, *path.parents) if parent in roots), repo_root)
 
 
 def _nearest_module_parent(
     module_root: Path,
     module_roots: tuple[Path, ...],
 ) -> Path | None:
-    parents = [
-        candidate
-        for candidate in module_roots
-        if candidate != module_root and module_root.is_relative_to(candidate)
-    ]
-    if not parents:
-        return None
-    return max(parents, key=lambda path: len(path.parts))
+    roots = {root: root for root in module_roots}
+    return next((roots[parent] for parent in module_root.parents if parent in roots), None)
 
 
 def _reconcile_topology(

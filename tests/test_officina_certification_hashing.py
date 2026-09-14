@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import ast
+import json
 from pathlib import Path
 
 import pytest
 
+import officina.certification.hashing as certification_hashing
 from officina.blueprints.graph import (
     BlueprintNode,
     InterfaceExport,
@@ -18,9 +20,38 @@ from officina.certification.hashing import (
     normalize_node_checks,
     resolve_certification_basis_paths,
 )
+from test_support.git_repository import GitTestRepository
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.parametrize("pattern", [
+    "inputs/./policy.txt", "inputs//policy.txt", "inputs/*.txt", "inputs/**/policy.txt",
+])
+def test_basis_lookup_preserves_normalized_and_missing_tracked_inputs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pattern: str,
+) -> None:
+    repository = GitTestRepository.initialize_existing_empty(tmp_path)
+    manifest = tmp_path / certification_hashing.CERTIFICATION_BASIS_MANIFEST
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(json.dumps([pattern]), encoding="utf-8")
+    policy = tmp_path / "inputs" / "policy.txt"
+    policy.parent.mkdir()
+    policy.write_text("policy\n", encoding="utf-8")
+    repository.git("add", ".")
+    repository.git("commit", "-qm", "basis")
+    matcher = certification_hashing._basis_pattern_matches
+
+    def match_glob(path, candidate_pattern):
+        assert "*" in str(candidate_pattern), "literal lookup must bypass glob matching"
+        return matcher(path, candidate_pattern)
+
+    monkeypatch.setattr(certification_hashing, "_basis_pattern_matches", match_glob)
+    assert set(resolve_certification_basis_paths(tmp_path)) == {manifest, policy}
+    policy.unlink()
+    with pytest.raises(CertificationHashError, match="tracked certification basis input is missing"):
+        resolve_certification_basis_paths(tmp_path)
 
 
 def test_stable_checks_are_canonical_and_reject_failed_or_duplicate_checks() -> None:

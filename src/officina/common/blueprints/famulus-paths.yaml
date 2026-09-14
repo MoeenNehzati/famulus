@@ -27,17 +27,13 @@ interfaces:
           type:
             kind: string
         home:
-          description: Absolute path to the caller's home directory used as the base
-            for non-override path resolution.
+          description: Python pathlib.Path value representing an absolute home directory,
+            used only as the lexical base for non-override path resolution.
           required: true
           sensitivity: user-private
-          direct_io_ref: home-metadata
           type:
-            kind: dir
-            syntax: literal
-            relative_to: caller-cwd
-            must_exist: false
-            access: read
+            kind: string
+            description: Python pathlib.Path value; no filesystem access is performed.
         environ:
           description: Explicit environment mapping containing platform root overrides
             and, together or not at all, normalized FAMULUS_HOST and
@@ -140,22 +136,14 @@ interfaces:
         state_effect: read-only
         lifecycle: finite
         consistency:
-          live: The explicit environment mapping is read once during the call.
+          live: The supplied mapping is consulted during validation and resolution
+            without taking a snapshot.
         verification:
         - method: output-schema
           output_ref: result
       helpers: []
       direct_io:
-        reads:
-        - id: home-metadata
-          medium: local-filesystem
-          access: read
-          content: home directory path used as the resolution base
-          formats:
-          - path
-          sensitivity: user-private
-          path: <home>
-          path_match: exact
+        reads: []
         writes:
         - id: return-value
           medium: local-system

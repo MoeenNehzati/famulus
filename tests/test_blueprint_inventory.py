@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Set
 from dataclasses import fields
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
 import yaml
@@ -94,6 +94,20 @@ def test_strict_inventory_selects_c_safe_loader_when_available() -> None:
     expected_loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
 
     assert issubclass(blueprint_inventory._StrictBlueprintLoader, expected_loader)
+
+
+@pytest.mark.parametrize("repository", [PurePosixPath("/repo"), PureWindowsPath("C:/Repo")])
+def test_owner_lookup_returns_nearest_original_root(repository) -> None:
+    outer, inner = repository / "Module", repository / "Module" / "Nested"
+    roots = (inner, repository / "Other", outer)
+    path = inner / "blueprints" / "source.yaml"
+    if isinstance(repository, PureWindowsPath):
+        path = PureWindowsPath(str(path).lower())
+    assert blueprint_inventory._module_root(repository, path, roots) is inner
+    assert blueprint_inventory._module_root(repository, outer, roots) is outer
+    assert blueprint_inventory._module_root(repository, repository / "unowned", roots) is repository
+    assert blueprint_inventory._nearest_module_parent(inner, roots) is outer
+    assert blueprint_inventory._nearest_module_parent(outer, roots) is None
 
 
 def test_selected_strict_loader_rejects_duplicate_keys() -> None:

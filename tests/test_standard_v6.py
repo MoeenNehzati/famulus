@@ -32,6 +32,19 @@ def prepared_schema_validator():
     return validator._prepare_schema_validator()
 
 
+def test_safe_yaml_loader_preserves_values_fallback_and_parse_diagnostics(tmp_path, monkeypatch):
+    text = "unicode: café\nflag: true\nnumber: 1.5\nitems: [one, two]\n"
+    assert validator._load_yaml(text) == yaml.safe_load(text)
+    malformed = tmp_path / "malformed.standard.yaml"
+    for text in ("standards: [\n", "value: *missing\n", "value: !!python/object:builtins.object {}\n"):
+        malformed.write_text(text, encoding="utf-8")
+        with pytest.raises(yaml.YAMLError) as expected:
+            yaml.safe_load(text)
+        assert validate_file(malformed) == [f"cannot load document: {expected.value}"]
+    monkeypatch.delattr(yaml, "CSafeLoader", raising=False)
+    assert validator._load_yaml("value: safe\n") == {"value": "safe"}
+
+
 def document() -> dict:
     return {
         "schema_version": 6,

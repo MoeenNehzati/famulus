@@ -268,7 +268,6 @@ def _reckoning_from_mapping(
         )
     except RecursionError as exc:
         raise RutterStateError("Reckoning active-child nesting is too deep") from exc
-    _validate_reckoning(reckoning)
     if semantic_validator is not None:
         if not callable(semantic_validator):
             raise RutterDefinitionError("semantic_validator must be callable")

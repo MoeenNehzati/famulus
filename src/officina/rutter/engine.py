@@ -2094,9 +2094,10 @@ def _advance_machine(
     assert isinstance(record, MachineRecord)
     history = HistoryView(accepted_leaf.run.history, accepted.completed_runs)
     try:
+        prefix = history.strict_prefix(record)
         transition = _select_transition(
             BoundRun(accepted_leaf.run, definition),
-            history.strict_prefix(record),
+            prefix,
             record,
         )
     except _RutterFault as fault:
@@ -2110,7 +2111,7 @@ def _advance_machine(
             accepted_leaf,
             definition,
             transition,
-            history.strict_prefix(record),
+            prefix,
             record,
         )
     except _RutterFault as fault:
@@ -2215,9 +2216,10 @@ def _advance(
                 accepted.completed_runs,
             )
             try:
+                prefix = history.strict_prefix(record)
                 transition = _select_transition(
                     BoundRun(accepted_leaf.run, definition),
-                    history.strict_prefix(record),
+                    prefix,
                     record,
                 )
             except _RutterFault as fault:
@@ -2242,7 +2244,7 @@ def _advance(
                     accepted_leaf,
                     definition,
                     transition,
-                    history.strict_prefix(record),
+                    prefix,
                     record,
                 )
             except _RutterFault as fault:

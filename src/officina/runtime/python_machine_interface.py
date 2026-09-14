@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import argparse
 import ast
+import base64
 import json
 import os
+import pickle
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -418,8 +420,9 @@ def trace_python_route_smoke_dependencies_batch(
     specifications: Iterable[tuple[Path, PythonProcessTarget]],
     *,
     schema_root: Path | None = None,
+    prepared_graph: "RepositoryBlueprintGraph | None" = None,
 ) -> dict[tuple[Path, PythonProcessTarget], tuple[Path, ...]]:
-    """Return isolated loaded-path traces from one Python child process."""
+    """Trace in a fresh child, optionally using a caller-frozen canonical graph."""
 
     repository_root = repo_root.resolve()
     normalized = _normalize_route_smoke_trace_specifications(
@@ -428,6 +431,21 @@ def trace_python_route_smoke_dependencies_batch(
     )
     if not normalized:
         return {}
+    graph_payload = None
+    if prepared_graph is not None:
+        from officina.blueprints.graph import RepositoryBlueprintGraph
+
+        if not isinstance(prepared_graph, RepositoryBlueprintGraph):
+            raise ValueError("prepared route-smoke graph must be canonical")
+        if any(
+            not isinstance(path, Path) or not path.resolve().is_relative_to(repository_root)
+            for node in prepared_graph.nodes.values()
+            for path in (node.module_root, node.blueprint_path, node.gateway_path)
+            if path is not None
+        ):
+            raise ValueError("prepared route-smoke graph belongs to another repository")
+        # Private parent-to-child stdin only; never load a caller-supplied pickle file.
+        graph_payload = base64.b64encode(pickle.dumps(prepared_graph)).decode("ascii")
     candidate_source_root = repository_root / "src"
     source_root = (
         candidate_source_root
@@ -448,9 +466,11 @@ def trace_python_route_smoke_dependencies_batch(
         selected_schema_root = schema_root.resolve()
     trace_code = r"""
 import contextlib
+import base64
 import io
 import json
 import os
+import pickle
 import sys
 from pathlib import Path
 
@@ -472,6 +492,7 @@ from officina.runtime.python_machine_interface import (
 )
 from officina.runtime.python_machine_interface_runner import load_interface, run_python_machine_interface
 
+request = json.loads(sys.stdin.read())
 specifications = [
     (
         Path(item["skill_root"]).resolve(),
@@ -482,7 +503,7 @@ specifications = [
             logical_entrypoint=item["python_target"].get("logical_entrypoint"),
         ),
     )
-    for item in json.loads(sys.stdin.read())
+    for item in request["specifications"]
 ]
 
 def is_under(path, root):
@@ -544,10 +565,10 @@ class TraceCertificationView:
         return None
 
 try:
-    graph = load_repository_blueprint_graph(
-        repo_root,
-        schema_root=schema_root,
-    )
+    if request["prepared_graph"] is None:
+        graph = load_repository_blueprint_graph(repo_root, schema_root=schema_root)
+    else:
+        graph = pickle.loads(base64.b64decode(request["prepared_graph"]))
 except BlueprintGraphError as exc:
     if tuple(iter_blueprints(repo_root)):
         raise
@@ -693,7 +714,7 @@ print(json.dumps(results))
         else f"{source_root}{os.pathsep}{current_pythonpath}"
     )
     specifications_json = json.dumps(
-        [
+        {"prepared_graph": graph_payload, "specifications": [
             {
                 "skill_root": skill_root.as_posix(),
                 "python_target": _python_process_target_payload(
@@ -701,7 +722,7 @@ print(json.dumps(results))
                 ),
             }
             for skill_root, python_target in normalized
-        ],
+        ]},
         ensure_ascii=False,
         separators=(",", ":"),
     )

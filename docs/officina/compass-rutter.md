@@ -40,8 +40,8 @@ The boundary is deliberate:
 - Compass invokes only the dispenser's versioned process interface. It assigns
   each returned Voyage ID to one agent and never passes Python `Rutter` or
   `Voyage` objects through the prompt boundary.
-- Each Voyage agent follows only the public status, validation, and advance
-  results for its assigned ID. It does not infer progress from conversation
+- Each Voyage agent follows only the dispenser's public results for its
+  assigned ID. It does not infer progress from conversation
   history or inspect Rutter internals.
 
 ## Self-describing dispenser interface
@@ -56,6 +56,7 @@ dispenser has the same operations:
 | `initiate [mode]` | Create one run's durable Voyages and return their opaque IDs. |
 | `list` | List all currently authorized Voyage IDs. |
 | `list --run-prefix PREFIX` | List only the Voyages initialized for one prefix. |
+| `next VOYAGE_ID` | Validate a response, settle machine work, and return the next message, terminal result, or fault atomically. |
 | `status VOYAGE_ID` | Read one Voyage's current public state. |
 | `validate VOYAGE_ID` | Validate a response without mutating the Voyage. |
 | `advance VOYAGE_ID` | Advance one Voyage, with a validated response when required. |
@@ -92,7 +93,7 @@ fresh `r-<uuid>` run for every initiation. Without a prefix, Voyage IDs have the
 form `r-<uuid>/<numeric-index>`; with one, they have the form
 `<prefix>/r-<uuid>/<numeric-index>`.
 
-The complete Voyage ID remains the authority used by `status`, `validate`,
+The complete Voyage ID remains the authority used by `next`, `status`, `validate`,
 `advance`, and `release`; those operations do not take a separate prefix.
 
 A bare `list` is a global inventory across the dispenser's active runs.
@@ -110,12 +111,11 @@ The controller follows this sequence:
    `list`, optionally scoped by prefix, only to recover or inspect retained work.
 4. Assign exactly one independent agent to every Voyage ID returned by that
    initiation. Agents do not share or switch IDs.
-5. Each agent reads `status`. For a Message, it performs the instruction,
-   validates its response, and advances only after successful validation. For
-   ready automatic work, it advances without a response.
-6. Each agent reads fresh status after every successful advance and stops on a
-   terminal result, fault, uncertain result, malformed result, or unknown
-   status.
+5. Each agent follows the dispenser's returned operating contract using only
+   its assigned ID. The current contract uses atomic `next`; separate `status`,
+   `validate`, and `advance` operations remain available for diagnostics.
+6. Each agent stops on a terminal result, fault, uncertain result, malformed
+   result, or unknown status.
 7. After retaining a terminal result, the agent invokes `release` unless it has
    an explicit reason to preserve the working directory. Nonterminal or
    uncertain Voyages must not be released.
@@ -137,7 +137,7 @@ than Compass arguments.
 The Voyage's persisted Reckoning, not session memory, selects the active
 evolution after a process or interaction restart. Because Voyage IDs are
 globally resolvable within the dispenser, a fresh process can reopen an assigned
-ID and continue through the same `status`, `validate`, and `advance` interface.
+ID and continue through the same dispenser interface.
 Release is the explicit end of that durable working-directory lifetime.
 
 ### Atomic controller operation

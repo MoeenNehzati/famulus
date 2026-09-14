@@ -10,6 +10,29 @@ HERE=Path(__file__).parent
 OPTIONAL=('imports','domain_facts','schema_authorities','schema_authority_links','checks','tests','assurances','semantic_reviews','links','evidence_claims','external_exceptions')
 SEMANTIC={'family','rule','assertion','guidance','definition','procedure','step','evidence-claim'}
 
+def _load_yaml(text):
+ """Parse safe YAML while retaining Python-loader failure diagnostics.
+
+ Intent
+ ------
+ Use the installed C safe loader when available and preserve existing parse errors.
+
+ Rationale
+ ---------
+ Standards imports repeatedly parse YAML; only failed parsing needs the slower diagnostic path.
+
+ Pseudocode
+ ----------
+ - return safe YAML using the available C or Python loader
+ - on YAML failure, repeat with the Python safe loader for its original diagnostic
+
+ Wraps
+ -----
+ - none
+ """
+ try:return yaml.load(text,Loader=getattr(yaml,'CSafeLoader',yaml.SafeLoader))
+ except yaml.YAMLError:return yaml.safe_load(text)
+
 def _schema():
  """Load the standard-v6 JSON Schema with its runtime identity.
 
@@ -622,6 +645,9 @@ def validate_file(path,root=None,cache=None,_stack=None,_schema_validator=None):
  ._fact_equal:
    why:
      computes: "Compares inherited domain facts without numeric type coercion."
+ ._load_yaml:
+   why:
+     computes: "Parses root and imported documents with preserved failure diagnostics."
 
  InstantiationsFromRepo
  ----------------------
@@ -644,7 +670,7 @@ def validate_file(path,root=None,cache=None,_stack=None,_schema_validator=None):
  path=Path(path).resolve(); root=Path(root).resolve() if root else path.parent.resolve(); cache={} if cache is None else cache; stack=list(_stack or []); schema_validator=_prepare_schema_validator() if _schema_validator is None else _schema_validator
  if path in stack:return ['import cycle: '+' -> '.join(map(str,stack+[path]))]
  if path in cache:return cache[path][1]
- try:d=yaml.safe_load(path.read_text(encoding='utf-8'))
+ try:d=_load_yaml(path.read_text(encoding='utf-8'))
  except Exception as x:return [f'cannot load document: {x}']
  try:_validate_with_prepared_schema(d,schema_validator)
  except jsonschema.ValidationError as x:return [f'schema validation failed: {x.message}']
@@ -684,7 +710,7 @@ def validate_file(path,root=None,cache=None,_stack=None,_schema_validator=None):
   if problem:errors.append(problem);continue
   actual='sha256:'+hashlib.sha256(target.read_bytes()).hexdigest()
   if actual!=decl['digest']:errors.append(f'imports.{alias}: digest mismatch');continue
-  try:child=yaml.safe_load(target.read_text(encoding='utf-8'))
+  try:child=_load_yaml(target.read_text(encoding='utf-8'))
   except Exception as exc:errors.append(f'imports.{alias}: cannot load imported document {target}: {exc}');continue
   try:_validate_with_prepared_schema(child,schema_validator)
   except jsonschema.ValidationError as exc:errors.append(f'imports.{alias}: schema validation failed at {exc.json_path}: {exc.message}');continue

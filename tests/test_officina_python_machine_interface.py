@@ -4,6 +4,7 @@ from __future__ import annotations
 import ast
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
+from dataclasses import replace
 import hashlib
 import importlib
 import json
@@ -22,6 +23,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from officina.certification.view import CertificationDecision  # noqa: E402
 from officina.blueprints.graph import (  # noqa: E402
+    BlueprintNode,
+    RepositoryBlueprintGraph,
     descriptor_safe_open_supported,
     load_repository_blueprint_graph,
 )
@@ -1382,6 +1385,42 @@ def test_route_smoke_trace_isolates_two_nested_rtx_logical_packages(
     assert (first / "helper.py").resolve() not in traces[
         (second.resolve(), second_target)
     ]
+
+
+def test_prepared_route_graph_keeps_fresh_traces_and_rejects_foreign_nodes(
+    tmp_path: Path,
+) -> None:
+    module = tmp_path / "skills" / "demo" / "_rtx"
+    _write_logical_runtime(module, value="demo")
+    target = _logical_target("demo-rtx")
+    specifications = ((module, target),)
+    graph = RepositoryBlueprintGraph(
+        nodes={}, node_edges=(), exports={}, export_edges=(), helper_edges=(),
+        certification_edges=(),
+    )
+    baseline = python_interface.trace_python_route_smoke_dependencies_batch(tmp_path, specifications)
+    for _ in range(2):
+        assert python_interface.trace_python_route_smoke_dependencies_batch(
+            tmp_path, specifications, prepared_graph=graph,
+        ) == baseline
+    with pytest.raises(ValueError, match="must be canonical"):
+        python_interface.trace_python_route_smoke_dependencies_batch(
+            tmp_path, specifications, prepared_graph=object(),
+        )
+    foreign = tmp_path.parent / "foreign"
+    node = BlueprintNode("foreign", "module", 1, foreign,
+        foreign / "blueprint.yaml", foreign / "SKILL.md", {})
+    with pytest.raises(ValueError, match="another repository"):
+        python_interface.trace_python_route_smoke_dependencies_batch(
+            tmp_path, specifications, prepared_graph=replace(graph, nodes={"foreign": node}),
+        )
+    runtime = module / "runtime.py"
+    runtime.write_text(runtime.read_text(encoding="utf-8").replace(
+        "    def route_smoke(self):", "    def route_smoke(self):\n        raise RuntimeError('fresh runtime failure')"),
+        encoding="utf-8")
+    for options in ({}, {"prepared_graph": graph}):
+        with pytest.raises(python_interface.PythonRouteSmokeTraceError, match="fresh runtime failure"):
+            python_interface.trace_python_route_smoke_dependencies_batch(tmp_path, specifications, **options)
 
 
 def test_load_interface_uses_shared_reader_without_posix_descriptors(

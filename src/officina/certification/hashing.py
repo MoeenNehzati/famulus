@@ -926,7 +926,7 @@ def resolve_certification_basis_paths(
         raise CertificationHashError(
             f"{manifest}: certification basis manifest must contain a JSON string list"
         )
-    tracked_at_head = _tracked_basis_paths_at_head(root)
+    tracked_at_head = set(_tracked_basis_paths_at_head(root))
     selected = {manifest}
     for pattern in raw:
         relative = Path(pattern)
@@ -935,16 +935,23 @@ def resolve_certification_basis_paths(
                 f"certification basis root must stay under target package: {pattern}"
             )
         is_pattern = any(character in pattern for character in "*?[]")
+        posix_pattern = PurePosixPath(pattern)
         current_candidates = (
             sorted(root.glob(pattern), key=lambda path: path.as_posix())
             if is_pattern
             else [root / relative]
         )
-        tracked_candidates = {
-            root.joinpath(*path.parts)
-            for path in tracked_at_head
-            if _basis_pattern_matches(path, PurePosixPath(pattern))
-        }
+        if is_pattern:
+            tracked_candidates = {
+                root.joinpath(*path.parts)
+                for path in tracked_at_head
+                if _basis_pattern_matches(path, posix_pattern)
+            }
+        else:
+            tracked_candidates = (
+                {root.joinpath(*posix_pattern.parts)}
+                if posix_pattern in tracked_at_head else set()
+            )
         matched_regular_file = False
         for path in sorted(
             {*current_candidates, *tracked_candidates},

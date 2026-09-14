@@ -159,8 +159,8 @@ interfaces:
           medium: local-system
           access: execute
           system: rutter.interface.dispenser
-          content: The authorized dispenser's initiate, optionally run-scoped list,
-            status, validate, and advance operations; durable traversal remains behind the interface.
+          content: Operations prescribed by the authorized dispenser's returned
+            operating contract; durable traversal remains behind the interface.
           formats:
           - process-interface
           sensitivity: user-private
