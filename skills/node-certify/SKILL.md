@@ -56,11 +56,22 @@ Retain the returned Voyage ID; one live controller owns its workers.
 Pass the same absolute `--repository` on every subsequent operation. The installed
 interface runs the candidate's own runtime and keeps Voyage state in that repository.
 
-Call `next VOYAGE_ID --repository ROOT`, then follow its typed result:
+Chain initialization and the first `next VOYAGE_ID --repository ROOT` in one
+tool execution, carrying forward the returned ID mechanically. Do not insert
+an inspection or bookkeeping turn between them. Then follow its typed result:
 
 - `message`: spawn one fresh subagent for every supplied packet, using its exact
   instruction interface and version. Pass the packet unchanged. Never reuse a
-  subagent for another task. Keep task-to-worker handles; wait when only
+  subagent for another task. Dispatch immediately; keep timing and monitoring
+  passive rather than adding controller turns before worker launch.
+  Start without parent conversation history when the host supports it. Supply
+  the exact packet and instruction reference, applicable workspace constraints,
+  and verified task-local bookkeeping commands. Batch independent evidence reads;
+  give enclosing tool calls enough output space to retain the selected evidence.
+  Allow further reads when evidence is incomplete or truncated. Workers
+  return their final JSON once; the controller preserves and forwards it without
+  asking the worker to write a duplicate report file.
+  Keep task-to-worker handles; wait when only
   outstanding workers remain. Forward one completion at a time using the exact
   raw final output, even if empty or apparently malformed:
   `{"outcome":"worker-completed","task_id":"ASSIGNED_ID","raw_output":"EXACT_OUTPUT"}`.

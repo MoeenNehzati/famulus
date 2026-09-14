@@ -18,6 +18,7 @@ content:
 - __init__\.py
 - _certification_voyage\.py
 - _certification_support\.py
+- _certification_preparation\.py
 - schemas/semantic-audit-(?:task|result)\.schema\.json
 description: Code module for the node-certify skill.
 exports:

@@ -11,6 +11,7 @@ gateway:
 content: &id001
 - _certification_voyage\.py
 - _certification_support\.py
+- _certification_preparation\.py
 - _semantic_audit_scheduler\.py
 - schemas/semantic-audit-(?:task|result)\.schema\.json
 dependencies: []
@@ -229,8 +230,8 @@ interfaces:
             kind: flag
       preconditions: []
       caller_warnings:
-      - external-side-effect: Initiation freezes reviewed inputs in one Reckoning. Advancement runs mechanical
-          checks and may append exact-node certificates. Release removes terminal run state; force permits
+      - external-side-effect: Initiation validates and seals mechanical preparation in one Reckoning when
+          certificates need renewal. Advancement verifies fresh inputs and may append exact-node certificates. Release removes terminal run state; force permits
           abandoning a nonterminal run.
       interaction:
         mode: unattended
@@ -274,7 +275,7 @@ interfaces:
         consistency:
           snapshot: An immutable Charter binds repository, commit, canonical input identities, DAG, capacity
             and retry interval. Each next validates and advances under the Reckoning lock; the exact signer
-            checks audited inputs inside its frozen-input path. External repositories execute through
+            reuses authenticated static preparation while checking live inputs, keys and certificate histories. External repositories execute through
             the confined candidate dispatcher process; initiation verifies candidate signer ownership
             before creating a Reckoning or dispatching workers.
         effects:

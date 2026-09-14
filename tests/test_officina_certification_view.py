@@ -467,6 +467,8 @@ def _evaluate(
     states: dict[str, object],
     commit: str,
     public_key_root: Path,
+    *,
+    requested: tuple[str, ...] | None = None,
 ):
     return evaluate_certificate_currentness(
         graph,
@@ -477,7 +479,44 @@ def _evaluate(
         certifier_identity=CERTIFIER,
         checks_by_node={node_id: CHECKS for node_id in graph.nodes},
         schema_root=CANONICAL_SCHEMA_ROOT,
+        requested=requested,
     )
+
+
+def test_selected_currentness_checks_dependencies_but_not_unrelated_logs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph, states, commit, public_keys, _backend, _key = _fixture(tmp_path)
+    target = "demo-skill"
+    dependency = "demo-skill.source.gateway"
+    unrelated = "unrelated.source.gateway"
+    graph = replace(graph, nodes={
+        **graph.nodes,
+        unrelated: replace(graph.nodes[dependency], node_id=unrelated),
+    })
+    states = {**states, unrelated: states[dependency]}
+    unrelated_log = certificate_log_path(graph.nodes[unrelated])
+    unrelated_log.write_bytes(b"malformed certificate\n")
+    certificate_log_path(graph.nodes[dependency]).unlink()
+    read_paths = []
+    read = certification_view_module.read_regular_file_bytes
+
+    def record_read(path, **kwargs):
+        read_paths.append(path)
+        return read(path, **kwargs)
+
+    monkeypatch.setattr(certification_view_module, "read_regular_file_bytes", record_read)
+    report = _evaluate(tmp_path, graph, states, commit, public_keys, requested=(target,))
+
+    assert set(report.nodes) == {target, dependency}
+    assert report.nodes[dependency].concerns == ("missing-certificate-log",)
+    assert f"dependency-not-current:{dependency}" in report.nodes[target].concerns
+    assert report.stale_worklist == (dependency,)
+    assert unrelated_log not in read_paths
+
+    full = _evaluate(tmp_path, graph, states, commit, public_keys)
+    assert full.nodes[unrelated].concerns == ("suspect-certificate-log",)
+    assert unrelated_log in read_paths
 
 
 def test_certificate_currentness_rejects_non_v6_graph_before_reading_certificates(
@@ -723,6 +762,7 @@ def test_v6_currentness_scopes_unrelated_dirt_but_requires_voyage_authority(
             source_commit=commit, certifier_identity=CERTIFIER,
             checks_by_node={node_id: CHECKS for node_id in graph.nodes},
             certification_basis_paths=(), schema_root=CANONICAL_SCHEMA_ROOT,
+            requested=(target,),
         )
         assert len(observed_paths) == len(set(observed_paths))
         assert [operation for operation in git_operations if operation in {"ls-tree", "ls-files", "cat-file"}] == [

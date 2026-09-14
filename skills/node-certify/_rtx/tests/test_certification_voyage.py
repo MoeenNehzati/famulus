@@ -69,23 +69,49 @@ def _run(tmp_path, monkeypatch, capacity=2):
     observed = SimpleNamespace(
         graph=graph, states=states, source_commit="a" * 40,
         currentness=CertificateCurrentnessReport(statuses),
+        requested_observations=[],
     )
     signed = []
 
-    def sign(**kwargs):
-        target = kwargs["node_id"]
-        assert kwargs["expected_audited_inputs"] == support.certifier.audited_inputs(states[target])
-        assert kwargs["expected_scope_identity"] == "scope"
-        assert "module" in kwargs["scope_target_node_ids"]
+    def sign(data, observation, target):
+        assert observation is observed
+        assert data["audited_inputs"][target] == support.certifier.audited_inputs(states[target])
+        assert data["certification_scope"] == "scope"
+        assert "module" in data["requested_targets"]
         assert target != "module" or statuses["source"].current
         signed.append(target)
         statuses[target] = replace(statuses[target], current=True, concerns=())
-        return [], SimpleNamespace(status="certificate-issued")
+        return True
 
-    monkeypatch.setattr(support, "observe", lambda _root: observed)
+    def open_preparation(data, envelope):
+        # Simulate invalidated physical preparation so the real canonical
+        # fallback still diagnoses the fixture's input and authority changes.
+        if (data["reviewed_commit"] != observed.source_commit
+                or any(expected != support.certifier.audited_inputs(states[node])
+                       for node, expected in data["audited_inputs"].items())
+                or support._ready_inputs(None, None, None).identity != data["certification_scope"]):
+            return None
+        observed.preparation = envelope
+        observed.__dict__.pop("preparation_changed", None)
+        return observed
+
+    def observe(_root, *, requested):
+        observed.requested_observations.append(
+            None if requested is None else list(requested),
+        )
+        observed.__dict__.pop("preparation", None)
+        observed.__dict__.pop("preparation_changed", None)
+        return observed
+
+    monkeypatch.setattr(support, "derive_repository_certification_state", observe)
     monkeypatch.setattr(support, "_ready_inputs", lambda *_args: SimpleNamespace(identity="scope"))
+    monkeypatch.setattr(support, "_prepare", lambda *_args: {"fixture": "preparation"})
+    monkeypatch.setattr(support.preparation, "open_preparation", open_preparation)
+    monkeypatch.setattr(support.preparation, "ensure_node_checks", lambda *_args: None)
+    monkeypatch.setattr(support.preparation, "publish_reviews", lambda *_args: None)
+    monkeypatch.setattr(support.preparation, "input_fingerprint", lambda *_args: "fixture-inputs")
     monkeypatch.setattr(support.certifier, "_verify_executing_candidate_certifier", lambda *_args: None)
-    monkeypatch.setattr(support.certifier, "certify_exact_node", sign)
+    monkeypatch.setattr(support.preparation, "issue", sign)
     charter = support.make_charter(tmp_path, ["module"], capacity, "run-one")
     registry = RutterRegistry({"certification": CERTIFICATION_RUTTER}, tmp_path)
     voyage = registry.create("certification", Path("test.reckoning.json"), charter)
@@ -119,7 +145,7 @@ def _submit(voyage, message, event):
 
 
 def test_dispatches_parallel_facets_then_signs_each_exact_node(tmp_path, monkeypatch):
-    voyage, _observed, signed = _run(tmp_path, monkeypatch)
+    voyage, observed, signed = _run(tmp_path, monkeypatch)
     message = voyage.next()
     first, second = _payload(message)["packets"]
     assert first["instruction_interface"]["id"].endswith("audit-interface.interface.audit")
@@ -144,6 +170,8 @@ def test_dispatches_parallel_facets_then_signs_each_exact_node(tmp_path, monkeyp
     assert terminal.kind == "terminal"
     assert terminal.status.terminal_result.outcome == "complete"
     assert signed == ["source", "module"]
+    assert observed.requested_observations
+    assert all(requested == ["module"] for requested in observed.requested_observations)
 
 
 @pytest.mark.parametrize("failure", [
@@ -206,14 +234,14 @@ def test_drift_stops_progress_before_next_dispatch(tmp_path, monkeypatch, when):
     if when == "sign-return":
         for interface in _payload(message)["packets"]:
             message = _submit(voyage, message, _event(interface))
-        sign = support.certifier.certify_exact_node
+        sign = support.preparation.issue
 
-        def sign_then_drift(**kwargs):
-            result = sign(**kwargs)
+        def sign_then_drift(*args):
+            result = sign(*args)
             observed.states["module"] = replace(observed.states["module"], node_hash="changed")
             return result
 
-        monkeypatch.setattr(support.certifier, "certify_exact_node", sign_then_drift)
+        monkeypatch.setattr(support.preparation, "issue", sign_then_drift)
     else:
         observed.states["source"] = replace(observed.states["source"], node_hash="changed")
     packet = _payload(message)["packets"][0]
@@ -240,17 +268,17 @@ def test_capacity_and_fresh_run_skip_current_nodes(tmp_path, monkeypatch):
         observed.currentness.nodes["module"], concerns=("dependency-not-current:source",),
         certificate={"payload": {"subject": {"id": "module"}}},
     )
-    sign = support.certifier.certify_exact_node
+    sign = support.preparation.issue
 
-    def renew_dependency(**kwargs):
-        result = sign(**kwargs)
+    def renew_dependency(*args):
+        result = sign(*args)
         # The observer can restore a propagated-stale parent after source renewal.
         observed.currentness.nodes["module"] = replace(
             observed.currentness.nodes["module"], current=True, concerns=(),
         )
         return result
 
-    monkeypatch.setattr(support.certifier, "certify_exact_node", renew_dependency)
+    monkeypatch.setattr(support.preparation, "issue", renew_dependency)
     message = voyage.next()
     for target in ("source.one", "source.two", "source"):
         packet, = _payload(message)["packets"]
@@ -260,10 +288,13 @@ def test_capacity_and_fresh_run_skip_current_nodes(tmp_path, monkeypatch):
     assert signed == ["source"]
     assert message.status.terminal_result.value["nodes_already_current"] == ("module",)
     charter = support.make_charter(tmp_path, ["module"], 1, "fresh-run")
+    assert charter["preparation"] is None
+    assert not hasattr(observed, "preparation")
     fresh = RutterRegistry({"certification": CERTIFICATION_RUTTER}, tmp_path).create(
         "certification", Path("fresh.reckoning.json"), charter,
     )
     terminal = fresh.next()
+    assert not hasattr(observed, "preparation")
     assert terminal.status.terminal_result.outcome == "complete"
     assert terminal.status.terminal_result.value["semantic_audit_count"] == 0
     assert signed == ["source"]
@@ -455,16 +486,15 @@ def test_replay_after_signing_reconciles_replaced_own_facet_evidence(tmp_path, m
     packet, = _payload(message)["packets"]
     assert packet["target_id"] == "source"
     assert len(packet["prerequisite_certificates"]) == 2
-    sign = support.certifier.certify_exact_node
+    sign = support.preparation.issue
 
     class InterruptedAppend(BaseException):
         pass
 
-    def interrupt_after_append(**kwargs):
-        target = kwargs["node_id"]
+    def interrupt_after_append(data, observation, target):
         if observed.currentness.nodes[target].current:
-            return [], SimpleNamespace(status="certificate-current")
-        result = sign(**kwargs)
+            return False
+        result = sign(data, observation, target)
         if target == "source":
             observed.currentness.nodes[target] = replace(
                 observed.currentness.nodes[target],
@@ -473,7 +503,7 @@ def test_replay_after_signing_reconciles_replaced_own_facet_evidence(tmp_path, m
             raise InterruptedAppend
         return result
 
-    monkeypatch.setattr(support.certifier, "certify_exact_node", interrupt_after_append)
+    monkeypatch.setattr(support.preparation, "issue", interrupt_after_append)
     with pytest.raises(InterruptedAppend):
         _submit(voyage, message, _event(packet))
     assert signed == ["source"]

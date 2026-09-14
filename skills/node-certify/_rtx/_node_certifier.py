@@ -9,9 +9,10 @@ import os
 import stat
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, Callable, Mapping, Sequence
 
 from officina.certification.hashing import (
@@ -820,6 +821,7 @@ class RouteSmokeAuditor:
         certification_basis_paths: Sequence[Path],
         certification_node_ids: Sequence[str],
         schema_root: Path | None = None,
+        reuse_graph: bool = False,
     ) -> None:
         """Initialize route-smoke configuration without executing a trace.
 
@@ -845,6 +847,7 @@ class RouteSmokeAuditor:
         self._certification_basis_paths = tuple(certification_basis_paths)
         self._certification_node_ids = tuple(certification_node_ids)
         self._schema_root = schema_root
+        self._reuse_graph = reuse_graph
         self._trace_specs: tuple[tuple[str, str, PythonProcessTarget], ...] | None = None
 
     def prepare_trace_specs(
@@ -931,6 +934,7 @@ class RouteSmokeAuditor:
             traces = trace_python_route_smoke_dependencies_batch(
                 root,
                 specifications,
+                **({"prepared_graph": self._graph} if self._reuse_graph else {}),
             )
         except (PythonRouteSmokeTraceError, ValueError) as exc:
             raise CertificationHashError(str(exc)) from exc
@@ -2179,6 +2183,7 @@ class CertificateBatchIssuer:
         freeze_guard: RepositoryFreezeGuard,
         before_append: object | None,
         after_append: object | None,
+        prepared_payloads: Mapping[str, Mapping[str, object]] | None = None,
     ) -> None:
         """Initialize one certificate batch without opening any output log.
 
@@ -2213,6 +2218,7 @@ class CertificateBatchIssuer:
         self._before_append = before_append
         self._after_append = after_append
         self._checks_by_node: dict[str, tuple[dict[str, object], ...]] = {}
+        self._prepared_payloads = prepared_payloads
 
     def _require_output_root(self, node_id: str, log_path: Path) -> None:
         """Require a confined regular directory for one certificate log.
@@ -2363,7 +2369,7 @@ class CertificateBatchIssuer:
         )
         records = normalize_node_checks(
             (
-                _run_deterministic_check(
+                _passed_check("deterministic") if self._prepared_payloads is not None else _run_deterministic_check(
                     evidence,
                     graph=self._graph,
                     states=self._states,
@@ -2476,7 +2482,7 @@ class CertificateBatchIssuer:
           why:
             raises: "Carries append races and invalid output metadata to the session."
         """
-        payload = _build_certificate_payload(
+        payload = dict(self._prepared_payloads[node_id]) if self._prepared_payloads is not None else _build_certificate_payload(
             self._repo_root,
             self._graph,
             self._states,
@@ -2488,6 +2494,11 @@ class CertificateBatchIssuer:
             checks=checks,
             certified_at=self._certified_at,
         )
+        if self._prepared_payloads is not None:
+            payload.update(
+                key_id=self._signing_key.key_id, previous_entry_hash=previous_hash,
+                checks=list(checks), certified_at=self._certified_at,
+            )
         envelope = sign_certificate_payload(payload, self._signing_key)
         frame = canonical_certificate_envelope_bytes(envelope) + b"\n"
         try:
@@ -2876,11 +2887,12 @@ def _certify_repository(
         raise CertificationError(str(exc)) from exc
     expected_checks_by_node = {
         node_id: expected_certifier_checks()
-        for node_id in graph.nodes
+        for node_id in order
     }
     initial_report = evaluate_certificate_currentness(
         graph,
         states,
+        requested=order,
         repo_root=root,
         public_key_root=public_key_root,
         source_commit=snapshot.commit,
@@ -2924,7 +2936,7 @@ def _certify_repository(
         )
     if renewal_order:
         if callable(before_stale_issuance):
-            before_stale_issuance()
+            before_stale_issuance(mechanical_validation_paths(states, order), order)
         route_auditor = RouteSmokeAuditor(
             graph,
             states,
@@ -3027,6 +3039,7 @@ def _certify_repository(
     final_report = evaluate_certificate_currentness(
         final_graph,
         final_states,
+        requested=order,
         repo_root=root,
         public_key_root=public_key_root,
         source_commit=final_snapshot.commit,
@@ -3132,6 +3145,8 @@ class CommandResult:
     exit_code: int
     stdout: str
     stderr: str
+    validation_paths: tuple[str, ...] | None = None
+    validation_node_ids: tuple[str, ...] | None = None
 
     @property
     def passed(self) -> bool:
@@ -3183,6 +3198,10 @@ class CommandResult:
             "passed": self.passed,
             "stdout_tail": self.stdout[-4000:],
             "stderr_tail": self.stderr[-4000:],
+            **({"validation_paths": list(self.validation_paths)}
+               if self.validation_paths is not None else {}),
+            **({"validation_node_ids": list(self.validation_node_ids)}
+               if self.validation_node_ids is not None else {}),
         }
 
 
@@ -3343,14 +3362,23 @@ def run_local_command(
     )
 
 
+def mechanical_validation_paths(
+    states: Mapping[str, NodeHashState], node_order: Sequence[str],
+) -> tuple[str, ...]:
+    """Select whole-file subjects from target and prerequisite manifests."""
+    return tuple(sorted({entry["path"] for node_id in node_order
+                         for entry in states[node_id].input_manifest}))
+
+
 def run_mechanical_checks(
-    repo_root: Path = REPO_ROOT,
+    repo_root: Path = REPO_ROOT, *, validation_paths: Sequence[str],
+    validation_node_ids: Sequence[str],
 ) -> CommandResult:
     """run_mechanical_checks runs the local validators required before certification.
 
     Intent
     ------
-    Execute the configured command checks in the reviewed repository and return their captured results.
+    Execute the selected file and node checks in the reviewed repository and return their captured results.
 
     Rationale
     ---------
@@ -3375,11 +3403,15 @@ def run_mechanical_checks(
         constructs: "Captured command results become the mechanical evidence returned to callers."
     """
 
-    result = run_local_command(
-        "validators",
-        [sys.executable, "repo_checks.py", "--suite", "validators"],
-        repo_root=repo_root,
-    )
+    command = [sys.executable, "repo_checks.py", "--suite", "validators"]
+    with TemporaryDirectory(prefix="certification-validators-") as temporary:
+        paths_file = Path(temporary) / "scope.json"
+        paths_file.write_text(json.dumps({"paths": list(validation_paths),
+            "node_ids": list(validation_node_ids)}), encoding="utf-8")
+        result = run_local_command("validators",
+            [*command, "--validation-scope-file", str(paths_file)], repo_root=repo_root)
+    result = replace(result, validation_paths=tuple(validation_paths),
+        validation_node_ids=tuple(validation_node_ids))
     if not result.passed:
         raise CertificationError(
             f"mechanical certification checks failed: {result.name} "
@@ -3574,8 +3606,8 @@ def certify(
         reviewed_commit=reviewed_commit,
         certified_at=timestamp
         or datetime.now().astimezone().isoformat(timespec="seconds"),
-        before_stale_issuance=lambda: evidence.append(
-            run_mechanical_checks(repository)
+        before_stale_issuance=lambda paths, nodes: evidence.append(
+            run_mechanical_checks(repository, validation_paths=paths, validation_node_ids=nodes)
         ),
         allow_non_atomic=allow_non_atomic,
         require_candidate_execution=True,
@@ -3693,8 +3725,8 @@ def certify_exact_node(
         reviewed_commit=reviewed_commit,
         certified_at=timestamp
         or datetime.now().astimezone().isoformat(timespec="seconds"),
-        before_stale_issuance=lambda: evidence.append(
-            run_mechanical_checks(repository)
+        before_stale_issuance=lambda paths, nodes: evidence.append(
+            run_mechanical_checks(repository, validation_paths=paths, validation_node_ids=nodes)
         ),
         allow_non_atomic=allow_non_atomic,
         require_candidate_execution=True,

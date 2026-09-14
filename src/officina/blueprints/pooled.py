@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 import yaml
 
@@ -66,34 +66,10 @@ def render_pooled_review(
             f"unknown pooled-review root module {selected_root!r}"
         )
 
-    children: dict[str, set[str]] = {node_id: set() for node_id in graph.nodes}
-    for edge in graph.certification_edges:
-        children.setdefault(edge.source_node_id, set()).add(edge.target_node_id)
-    selected: set[str] = set()
-
-    def visit(node_id: str) -> None:
-        if node_id in selected:
-            return
-        selected.add(node_id)
-        for target_id in sorted(children.get(node_id, ())):
-            visit(target_id)
-
-    for node_id in (selected_root, *graph.module_sources[selected_root]):
-        visit(node_id)
-    certificates = {}
-    for node_id in sorted(selected):
-        certificate = certification.certificate_for(node_id)
-        if certificate is None:
-            raise PooledReviewValidationError(
-                f"{node_id}: pooled review requires a current certificate"
-            )
-        certificates[node_id] = certificate
-
-    root_certificate = certificates[selected_root]
+    selected = pooled_review_node_ids(graph, selected_root)
     nodes: list[dict[str, Any]] = []
     for node_id in sorted(selected):
         node = graph.nodes[node_id]
-        certificate = certificates[node_id]
         if node.gateway_path is None:
             raise PooledReviewValidationError(
                 f"{node_id}: reviewed node has no gateway"
@@ -109,26 +85,74 @@ def render_pooled_review(
                 "gateway_path": _review_path(
                     node.gateway_path, node.module_root
                 ),
-                "declaration": deepcopy(node.declaration),
-                "certificate": {
-                    "status": "current",
-                    "node_hash": certificate.node_hash,
-                    "certificate_hash": certificate.certificate_hash,
-                },
+                "declaration": node.declaration,
             }
         )
+    return _render_pooled_review_nodes(
+        selected_root,
+        _review_path(root_node.blueprint_path, root_node.module_root),
+        nodes,
+        certification,
+    )
+
+
+def pooled_review_node_ids(graph: RepositoryBlueprintGraph, root_id: str) -> tuple[str, ...]:
+    """Select the pooled review's certification edges from its module and sources."""
+
+    children: dict[str, set[str]] = {node_id: set() for node_id in graph.nodes}
+    for edge in graph.certification_edges:
+        children.setdefault(edge.source_node_id, set()).add(edge.target_node_id)
+    selected: set[str] = set()
+
+    def visit(node_id: str) -> None:
+        if node_id in selected:
+            return
+        selected.add(node_id)
+        for target_id in sorted(children.get(node_id, ())):
+            visit(target_id)
+
+    for node_id in (root_id, *graph.module_sources[root_id]):
+        visit(node_id)
+    return tuple(sorted(selected))
+
+
+def _render_pooled_review_nodes(
+    root_id: str,
+    root_blueprint_path: str,
+    nodes: Sequence[Mapping[str, Any]],
+    certification: CertificationView,
+) -> str:
+    """Render prepared node descriptors with live current certificate records."""
+
+    certificates = {}
+    reviewed_nodes = []
+    for node in sorted(nodes, key=lambda item: item["id"]):
+        node_id = node["id"]
+        certificate = certification.certificate_for(node_id)
+        if certificate is None:
+            raise PooledReviewValidationError(
+                f"{node_id}: pooled review requires a current certificate"
+            )
+        certificates[node_id] = certificate
+        reviewed_nodes.append({
+            **deepcopy(node),
+            "certificate": {
+                "status": "current",
+                "node_hash": certificate.node_hash,
+                "certificate_hash": certificate.certificate_hash,
+            },
+        })
+    root_certificate = certificates[root_id]
     document = {
         "schema_version": 2,
         "document_type": "pooled-blueprint-review",
         "generated_at": root_certificate.certified_at,
         "root": {
-            "id": selected_root,
-            "blueprint_path": _review_path(
-                root_node.blueprint_path, root_node.module_root
-            ),
+            "id": root_id,
+            "blueprint_path": root_blueprint_path,
             "node_hash": root_certificate.node_hash,
             "certificate_hash": root_certificate.certificate_hash,
         },
-        "nodes": nodes,
+        "nodes": reviewed_nodes,
     }
     return yaml.safe_dump(document, sort_keys=False, allow_unicode=False)

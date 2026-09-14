@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Mapping, Sequence
 
 from jsonschema import Draft202012Validator, ValidationError
@@ -24,6 +25,7 @@ from officina.rutter import (
 
 from . import _node_certifier as certifier
 from . import _semantic_audit_scheduler as scheduler
+from . import _certification_preparation as preparation
 
 SCHEMA_ROOT = Path(__file__).resolve().parent / "schemas"
 PACKET_VERSION = "node-certify.semantic-audit-task/v1"
@@ -67,10 +69,10 @@ def plain(value: object) -> object:
     return value
 
 
-def observe(repository: Path):
-    """Read canonical graph, input identity and authenticated currentness."""
+def observe(repository: Path, requested: Sequence[str] | None = None):
+    """Read canonical inputs and authenticate the requested dependency closure."""
 
-    return derive_repository_certification_state(repository)
+    return derive_repository_certification_state(repository, requested=requested)
 
 
 def _ready_inputs(repository: Path, observation, requested: Sequence[str], whole_graph: bool = False):
@@ -80,9 +82,8 @@ def _ready_inputs(repository: Path, observation, requested: Sequence[str], whole
     scope = certification_input_scope(
         observation.graph, observation.states, repo_root=repository, requested=requested,
         whole_graph=whole_graph,
-        certification_basis_paths=resolve_certification_basis_paths(
-            repository,
-        ),
+        certification_basis_paths=(observation.certification_basis_paths
+            if hasattr(observation, "certification_basis_paths") else resolve_certification_basis_paths(repository)),
     )
     guard = certifier.RepositoryFreezeGuard(
         repo_root=repository, snapshot=snapshot, allow_non_atomic=False, scoped=True,
@@ -113,7 +114,8 @@ def make_charter(
     if type(retry_interval_seconds) is not int or retry_interval_seconds < 1:
         raise ValueError("retry_interval_seconds must be a positive integer")
     repository = repository.expanduser().resolve()
-    observation = observe(repository)
+    initial_inputs = preparation.input_fingerprint(repository)
+    observation = observe(repository, targets or None)
     graph = observation.graph
     requested = tuple(sorted(set(targets))) if targets else tuple(sorted(graph.nodes))
     if any(target not in graph.nodes for target in requested):
@@ -143,7 +145,7 @@ def make_charter(
         if certificate_requires_renewal(observation.currentness.nodes[node_id])
     )
     required = set(semantic_stale_vertices(graph, observation.currentness, stale))
-    return {
+    data = {
         "reviewed_repository": str(repository),
         "reviewed_commit": observation.source_commit,
         "certification_scope": scope.identity,
@@ -161,11 +163,35 @@ def make_charter(
             for node_id in order
         },
     }
+    data["preparation"] = None
+    if stale:
+        data["preparation"] = _prepare(data, observation, scope, initial_inputs)
+    return data
+
+
+def _prepare(data, observation, scope, initial_inputs):
+    context = SimpleNamespace(charter=SimpleNamespace(data=data))
+    packets = {task["id"]: _packet(context, observation, task["id"], {}, {}, static_only=True)
+               for task in data["dag"]["nodes"]}
+    return preparation.prepare(data, observation, scope, packets, initial_inputs)
 
 
 def _observation(context: EvolutionContext):
     data = context.charter.data
-    observed = observe(Path(data["reviewed_repository"]))
+    envelope = data.get("preparation")
+    for record in context.history.machines():
+        if record.result.value.get("preparation") is not None:
+            envelope = record.result.value["preparation"]
+    if envelope is not None:
+        observed = preparation.open_preparation(plain(data), plain(envelope))
+        if observed is not None:
+            _require_audit_scope(data, observed)
+            return observed
+    initial_inputs = preparation.input_fingerprint(Path(data["reviewed_repository"]))
+    observed = observe(
+        Path(data["reviewed_repository"]),
+        None if data["whole_graph"] else data["requested_targets"],
+    )
     if observed.source_commit != data["reviewed_commit"]:
         raise ValueError("reviewed repository commit changed")
     for node_id, expected in data["audited_inputs"].items():
@@ -177,6 +203,18 @@ def _observation(context: EvolutionContext):
     )
     if scope.identity != data["certification_scope"]:
         raise ValueError("certification scope changed after preparation")
+    _require_audit_scope(data, observed)
+    if envelope is not None or any(not observed.currentness.nodes[node].current for node in data["node_order"]):
+        fresh = _prepare(plain(data), observed, scope, initial_inputs)
+        refreshed = preparation.open_preparation(plain(data), fresh)
+        if refreshed is None:
+            raise ValueError("inputs changed after refreshed preparation")
+        refreshed.preparation_changed = True
+        return refreshed
+    return observed
+
+
+def _require_audit_scope(data, observed):
     stale = tuple(
         node_id for node_id in data["node_order"]
         if certificate_requires_renewal(observed.currentness.nodes[node_id])
@@ -185,7 +223,6 @@ def _observation(context: EvolutionContext):
     selected = {node["id"] for node in data["dag"]["nodes"]}
     if additional := sorted((required & selected) - set(data["required"])):
         raise ValueError("certificate evidence changed: additional semantic audits required: " + ", ".join(additional))
-    return observed
 
 
 def progress(context: EvolutionContext):
@@ -246,10 +283,17 @@ def _certificate(observation, target: str) -> dict[str, object]:
     }
 
 
-def _packet(context, observation, target, packets, reports):
+def _packet(context, observation, target, packets, reports, *, static_only=False):
     data = context.charter.data
     nodes = {node["id"]: node for node in data["dag"]["nodes"]}
     task = nodes[target]
+    if hasattr(observation, "prepared_packets"):
+        packet = plain(observation.prepared_packets[target])
+        target_reports = {packets[key]["target_id"]: report for key, report in reports.items()}
+        packet["prerequisite_reports"] = [target_reports[dependency] for dependency in task["dependencies"] if dependency in target_reports]
+        packet["prerequisite_certificates"] = [_certificate(observation, dependency) for dependency in task["dependencies"] if dependency not in target_reports]
+        _validate_packet(packet)
+        return packet
     owner = task["owner_node_id"] or target
     state = observation.states[owner]
     node = observation.graph.nodes[owner]
@@ -270,6 +314,8 @@ def _packet(context, observation, target, packets, reports):
                 else dependency_node.declaration
             ),
         })
+        if static_only:
+            continue
         if dependency in target_reports:
             prerequisites.append(target_reports[dependency])
         else:
@@ -304,12 +350,16 @@ def _packet(context, observation, target, packets, reports):
         "prerequisite_certificates": certificates,
         "prerequisite_declarations": declarations,
     }
+    _validate_packet(packet)
+    return packet
+
+
+def _validate_packet(packet):
     schema = json.loads((SCHEMA_ROOT / "semantic-audit-task.schema.json").read_text())
     schema["properties"]["prerequisite_reports"]["items"] = json.loads(
         (SCHEMA_ROOT / "semantic-audit-result.schema.json").read_text()
     )
     Draft202012Validator(schema).validate(packet)
-    return packet
 
 
 def _verify_packet_evidence(observation, packets, issued) -> None:
@@ -346,7 +396,11 @@ def prepare(context: MachineContext) -> MachineResult:
             None,
         )
         if root is None:
+            if hasattr(observed, "preparation"):
+                preparation.publish_reviews(plain(data), observed, issued)
             return MachineResult("complete", {"current": current, "packets": []})
+        preparation.ensure_node_checks(plain(data), observed, root)
+        retained = {"preparation": observed.preparation} if getattr(observed, "preparation_changed", False) else {}
         nodes = {node["id"]: node for node in data["dag"]["nodes"]}
         root_tasks = {
             target for target in data["required"]
@@ -354,7 +408,7 @@ def prepare(context: MachineContext) -> MachineResult:
         }
         audited = {packets[key]["target_id"] for key in reports}
         if root_tasks <= audited:
-            return MachineResult("sign", {"root": root, "current": current, "packets": []})
+            return MachineResult("sign", {"root": root, "current": current, "packets": [], **retained})
         assigned = {packet["target_id"] for packet in packets.values()}
         outstanding = sorted(set(packets) - set(reports))
         ready = scheduler.ready_tasks(
@@ -367,6 +421,7 @@ def prepare(context: MachineContext) -> MachineResult:
         if not selected and not outstanding:
             raise ValueError(f"no ready semantic audit for {root}")
         return MachineResult("dispatch", {
+            **retained,
             "root": root, "packets": selected, "current": current,
             "outstanding": outstanding + [packet["task_id"] for packet in selected],
             "worker_capacity": data["worker_capacity"],
@@ -378,7 +433,8 @@ def prepare(context: MachineContext) -> MachineResult:
 def dispatch_data(context: EvolutionContext):
     """Expose the machine-selected packets without graph or signing decisions."""
 
-    return context.history.machines("prepare-and-reconcile")[-1].result.value
+    value = context.history.machines("prepare-and-reconcile")[-1].result.value
+    return {key: item for key, item in value.items() if key != "preparation"}
 
 
 def assess_event(context: LLMResponseContext) -> ValidationReport:
@@ -420,6 +476,7 @@ def accept_and_certify(context: MachineContext) -> MachineResult:
             reports[task_id] = report
         observed = _observation(evolution)
         _verify_packet_evidence(observed, packets, issued)
+        preparation.ensure_node_checks(plain(data), observed, root)
         nodes = {node["id"]: node for node in data["dag"]["nodes"]}
         required = {
             target for target in data["required"]
@@ -427,16 +484,10 @@ def accept_and_certify(context: MachineContext) -> MachineResult:
         }
         audited = {packets[key]["target_id"] for key in reports}
         result = {"report": report, "issued": [], "current": []}
+        if getattr(observed, "preparation_changed", False):
+            result["preparation"] = observed.preparation
         if required <= audited:
-            _checks, outcome = certifier.certify_exact_node(
-                node_id=root, reviewed_repository=Path(data["reviewed_repository"]),
-                reviewed_commit=data["reviewed_commit"],
-                expected_audited_inputs=plain(data["audited_inputs"][root]),
-                scope_target_node_ids=tuple(data["requested_targets"]),
-                expected_scope_identity=data["certification_scope"],
-                scope_whole_graph=data["whole_graph"],
-            )
-            field = "issued" if outcome.status == "certificate-issued" else "current"
+            field = "issued" if preparation.issue(plain(data), observed, root) else "current"
             result[field] = [root]
         return MachineResult("accepted", result)
     except (ValueError, TypeError, KeyError, OSError, certifier.CertificationError) as error:

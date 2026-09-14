@@ -253,3 +253,25 @@ a separate user decision.
 
 - Correctness and host delivery: GREEN after revision, `merge_certifier`, 2026-09-13.
 - Ponytail, performance and release evidence: GREEN after revision, `merge_core`, 2026-09-13.
+
+## Performance follow-up, 2026-09-14
+
+The follow-up seals reusable certification evidence, authenticates only selected
+certificate histories, and selects validator subjects before reads. Graph checks
+cover renewal nodes once; local checks run at each stale node's audit turn.
+Standalone certification remains independently checked. The controller chains
+initialization to the first `next` and forwards worker results unchanged.
+Ownership lookup, YAML loading, graph transport and Rutter bookkeeping also
+avoid repeated work. Implementation and simplicity reviews are green.
+
+The [performance report](2026-09-14-certification-performance-report.md) retains
+the matched trials, real worker-log analysis, failure probes and limits. Final
+hybrid machine medians were 12.394 → 13.373 seconds full and 8.201 → 7.883 seconds
+after a small change; variability prevents claiming an overall speedup.
+The 5/1/0 audit counts in timing fixtures used synthetic reports and memory keys.
+
+The few-second target, fresh semantic instruction A/B and full post-change
+real-worker qualification remain open. The overnight connected host lacked the
+Voyage interface; the separate candidate MCP transport probe did not refresh
+that installation. Earlier release results above qualify their historical bytes,
+not these follow-up changes. No host configuration change is part of this work.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import json
 import stat
 import sys
 from dataclasses import replace
@@ -717,9 +718,11 @@ def test_certifier_route_audit_rejects_non_v6_graph_before_tracing(
         ).trace_dependencies()
 
 
+@pytest.mark.parametrize("reuse_graph", [False, True])
 def test_route_auditor_prepares_once_but_traces_twice(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    reuse_graph: bool,
 ) -> None:
     graph = _synthetic_python_source_graph(tmp_path)
     states = {node_id: NodeHashState() for node_id in graph.nodes}
@@ -734,6 +737,7 @@ def test_route_auditor_prepares_once_but_traces_twice(
 
     def trace(*_args: object, **_kwargs: object):
         nonlocal trace_calls
+        assert _kwargs == ({"prepared_graph": graph} if reuse_graph else {})
         trace_calls += 1
         return {}
 
@@ -749,6 +753,7 @@ def test_route_auditor_prepares_once_but_traces_twice(
         repo_root=tmp_path,
         certification_basis_paths=(),
         certification_node_ids=("demo-skill",),
+        reuse_graph=reuse_graph,
     )
 
     assert auditor.require_stable_dependencies() == ()
@@ -846,34 +851,10 @@ def test_v6_writer_rejects_a_predecessor_log_race(tmp_path: Path) -> None:
     assert log_path.read_bytes() == b"raced\n"
 
 
-def test_mechanical_gate_runs_only_the_repository_checks_entrypoint(
+def test_mechanical_gate_reports_validator_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls: list[tuple[str, list[str], Path]] = []
-
-    def run(
-        name: str,
-        command: list[str],
-        *,
-        repo_root: Path,
-    ) -> certifier.CommandResult:
-        calls.append((name, command, repo_root))
-        return _passed_mechanical_result()
-
-    monkeypatch.setattr(certifier, "run_local_command", run)
-
-    result = certifier.run_mechanical_checks(tmp_path)
-
-    assert result == _passed_mechanical_result()
-    assert calls == [
-        (
-            "validators",
-            [sys.executable, "repo_checks.py", "--suite", "validators"],
-            tmp_path,
-        )
-    ]
-
     monkeypatch.setattr(
         certifier,
         "run_local_command",
@@ -883,11 +864,36 @@ def test_mechanical_gate_runs_only_the_repository_checks_entrypoint(
         ),
     )
     with pytest.raises(certifier.CertificationError) as error:
-        certifier.run_mechanical_checks(tmp_path)
+        certifier.run_mechanical_checks(tmp_path, validation_paths=(), validation_node_ids=())
     assert str(error.value) == (
         "mechanical certification checks failed: validators (exit 1)\n"
         "validator finding\nmissing dependency\n"
     )
+
+
+@pytest.mark.parametrize("order", [(), ("target", "dependency")])
+def test_mechanical_subjects_and_receipt_keep_only_selected_manifests(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, order: tuple[str, ...],
+) -> None:
+    states = {node: NodeHashState(node_hash="sha256:" + "a" * 64,
+        input_manifest=({"path": path},)) for node, path in (
+            ("target", "skills/demo/main.py"), ("dependency", "src/common.py"),
+            ("authority", "validators/unrelated.py"))}
+    paths = certifier.mechanical_validation_paths(states, order)
+    assert paths == (() if not order else ("skills/demo/main.py", "src/common.py"))
+
+    def run(name, command, *, repo_root):
+        assert name == "validators"
+        assert repo_root == tmp_path
+        assert command[:-2] == [sys.executable, "repo_checks.py", "--suite", "validators"]
+        assert command[-2] == "--validation-scope-file"
+        assert json.loads(Path(command[-1]).read_text(encoding="utf-8")) == {"paths": list(paths), "node_ids": list(order)}
+        return _passed_mechanical_result()
+
+    monkeypatch.setattr(certifier, "run_local_command", run)
+    result = certifier.run_mechanical_checks(tmp_path, validation_paths=paths, validation_node_ids=order)
+    assert result.passed and result.as_payload()["validation_paths"] == list(paths)
+    assert result.as_payload()["validation_node_ids"] == list(order)
 
 
 def test_cli_propagates_explicit_non_atomic_fallback(
@@ -939,7 +945,7 @@ def test_public_certification_resolves_one_target_without_hash_dispatch(
 
     def issue(repo_root: Path, **kwargs: object):
         calls.append({"repo_root": repo_root, **kwargs})
-        kwargs["before_stale_issuance"]()
+        kwargs["before_stale_issuance"](("skills/demo-skill/main.py",), ("demo-skill",))
         events.append("issue")
         return certifier.CertificationResult(
             node_ids=tuple(kwargs["target_node_ids"]),
@@ -955,7 +961,7 @@ def test_public_certification_resolves_one_target_without_hash_dispatch(
     monkeypatch.setattr(
         certifier,
         "run_mechanical_checks",
-        lambda _repo_root: (events.append("mechanical") or _passed_mechanical_result()),
+        lambda _repo_root, **_kwargs: (events.append("mechanical") or _passed_mechanical_result()),
     )
 
     evidence, outcomes = certifier.certify(
@@ -1019,7 +1025,7 @@ def test_public_certification_reports_already_current_nodes_as_satisfied(
     monkeypatch.setattr(
         certifier,
         "run_mechanical_checks",
-        lambda repo_root: (
+        lambda repo_root, **_kwargs: (
             mechanical_calls.append(repo_root) or _passed_mechanical_result()
         ),
     )
@@ -1073,7 +1079,7 @@ def test_public_certification_without_targets_selects_all_reviewed_modules(
     monkeypatch.setattr(
         certifier,
         "run_mechanical_checks",
-        lambda _repo_root: _passed_mechanical_result(),
+        lambda _repo_root, **_kwargs: _passed_mechanical_result(),
     )
 
     _evidence, outcomes = certifier.certify(
@@ -1133,12 +1139,12 @@ def test_public_certification_has_no_mechanical_bypass(
     graph = _synthetic_repository_graph(tmp_path)
     signed = False
 
-    def fail_mechanical(_repo_root: Path) -> certifier.CommandResult:
+    def fail_mechanical(_repo_root: Path, **_kwargs) -> certifier.CommandResult:
         raise certifier.CertificationError("mechanical certification checks failed")
 
     def issue(*_args: object, **kwargs: object) -> object:
         nonlocal signed
-        kwargs["before_stale_issuance"]()
+        kwargs["before_stale_issuance"](("skills/demo-skill/main.py",), ("demo-skill",))
         signed = True
         pytest.fail("signing ran after the mechanical gate failed")
 
@@ -1259,7 +1265,7 @@ def test_public_exact_node_certification_never_expands_the_selected_source(
 
     def issue(_repo_root: Path, **kwargs: object):
         calls.append(dict(kwargs))
-        kwargs["before_stale_issuance"]()
+        kwargs["before_stale_issuance"](("skills/demo-skill/main.py",), ("demo-skill",))
         return certifier.CertificationResult(
             node_ids=(source_id,),
             source_commit=commit,
@@ -1274,7 +1280,7 @@ def test_public_exact_node_certification_never_expands_the_selected_source(
     monkeypatch.setattr(
         certifier,
         "run_mechanical_checks",
-        lambda _repo_root: _passed_mechanical_result(),
+        lambda _repo_root, **_kwargs: _passed_mechanical_result(),
     )
 
     evidence, outcome = certifier.certify_exact_node(

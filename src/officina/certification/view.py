@@ -766,219 +766,187 @@ def certificate_stale_worklist(
     )
 
 
-def evaluate_certificate_currentness(
-    graph: RepositoryBlueprintGraph,
-    states: Mapping[str, NodeHashState],
+def _evaluate_node_currentness(
+    node: BlueprintNode,
+    state: NodeHashState | None,
     *,
     repo_root: Path,
     public_key_root: Path,
-    source_commit: str,
     certifier_identity: Mapping[str, object],
-    checks_by_node: Mapping[str, Sequence[Mapping[str, object]]],
-    certification_basis_paths: Sequence[Path] | None = None,
-    schema_root: Path | None = None,
+    expected_checks: Sequence[Mapping[str, object]],
+    tracked_inputs_clean: bool,
+    validator: Any,
     allow_non_atomic: bool = False,
-) -> CertificateCurrentnessReport:
-    """Evaluate the final entry of every certificate log against one derived graph state.
+) -> CertificateNodeCurrentness:
+    """Compare one live certificate log with canonical node evidence."""
 
-    InstantiationsFromRepo
-    ----------------------
-    .hashing._certification_input_scope_builder:
-      why:
-        constructs: "Builds the shared authority scope used for v6 node readiness."
-    """
-    if graph.schema_version != 6:
-        raise CertificationHashError(
-            "certification currentness requires a schema v6 graph"
-        )
-
+    node_id = node.node_id
     root = Path(repo_root).resolve()
-    selected_schema_root = Path(schema_root) if schema_root is not None else _default_schema_root()
-    validator = schema_validator(load_schema(selected_schema_root / "certificate.schema.json"))
-    local: dict[str, CertificateNodeCurrentness] = {}
-    node_tracked_inputs_clean = {
-        node_id: False for node_id in graph.nodes
-    }
+    concerns: list[str] = []
+    local_hash_changed = False
+    declaration_changed = False
+    blueprint_path: str | None = None
+    input_files: tuple[CertificateInputDelta, ...] = ()
+    dependencies: tuple[CertificateDependencyDelta, ...] = ()
+    facet_drift: tuple[CertificateFacetDrift, ...] = ()
+    if not tracked_inputs_clean:
+        concerns.append("source-commit-input-mismatch")
+    certificate: Mapping[str, object] | None = None
+    if not isinstance(state, NodeHashState):
+        return CertificateNodeCurrentness(
+            node_id,
+            False,
+            ("derived-state-unavailable",),
+            None,
+        )
+    path = certificate_log_path(node)
+    if not path.exists():
+        return CertificateNodeCurrentness(
+            node_id,
+            False,
+            ("missing-certificate-log",),
+            None,
+        )
     try:
-        snapshot = capture_git_snapshot(root)
-        selected_basis_paths = (
-            tuple(certification_basis_paths)
-            if certification_basis_paths is not None
-            else resolve_certification_basis_paths(
-                root,
+        entries = parse_certificate_log(
+            read_regular_file_bytes(
+                path,
+                allowed_root=node.module_root,
                 allow_non_atomic=allow_non_atomic,
+            ),
+            public_key_root,
+            allow_non_atomic=allow_non_atomic,
+        )
+    except (CertificateLogError, AtomicWriteError, OSError, TypeError, ValueError):
+        return CertificateNodeCurrentness(
+            node_id,
+            False,
+            ("suspect-certificate-log",),
+            None,
+        )
+    certificate = entries[-1]
+    try:
+        for entry in entries:
+            validator.validate(entry)
+    except jsonschema.ValidationError:
+        concerns.append("invalid-certificate-schema")
+    payload = certificate.get("payload")
+    if not isinstance(payload, Mapping):
+        concerns.append("invalid-certificate-schema")
+    else:
+        current_manifest = [dict(entry) for entry in state.input_manifest]
+        current_dependencies = [dict(entry) for entry in state.dependency_hashes]
+        certified_manifest = payload.get("input_manifest", [])
+        certified_dependencies = payload.get("dependencies", [])
+        facet_capable = (
+            payload.get("certificate_schema_version") == 3
+            and bool(state.facets)
+        )
+        if not facet_capable:
+            input_files = _input_file_deltas(
+                certified_manifest,
+                current_manifest,
             )
+            dependencies = _dependency_deltas(
+                certified_dependencies,
+                current_dependencies,
+            )
+            local_hash_changed = payload.get("node_hash") != state.node_hash
+            current_blueprint_path = _relative_path(
+                node.blueprint_path,
+                root,
+            )
+            blueprint_input_changed = any(
+                delta.path == current_blueprint_path for delta in input_files
+            )
+            declaration_changed = (
+                blueprint_input_changed
+                or (
+                    local_hash_changed
+                    and certified_manifest == current_manifest
+                    and certified_dependencies == current_dependencies
+                )
+            )
+            blueprint_path = (
+                current_blueprint_path
+                if declaration_changed
+                else None
+            )
+        if payload.get("certificate_schema_version") != 3:
+            concerns.append("legacy-certificate-payload")
+        else:
+            concerns.extend(
+                _facet_currentness_concerns(payload.get("facets"), state)
+            )
+            facet_drift = _facet_drift(
+                payload.get("facets"),
+                state,
+                blueprint_path=_relative_path(node.blueprint_path, root),
+            )
+        if payload.get("subject") != _expected_subject(node, root):
+            concerns.append("subject-mismatch")
+        if payload.get("input_manifest") != [dict(entry) for entry in state.input_manifest]:
+            concerns.append("input-manifest-mismatch")
+        if payload.get("node_hash") != state.node_hash:
+            concerns.append("node-hash-mismatch")
+        if payload.get("dependencies") != [dict(entry) for entry in state.dependency_hashes]:
+            concerns.append("dependency-mismatch")
+        if payload.get("certification_basis_hash") != state.certification_basis_hash:
+            concerns.append("certification-basis-mismatch")
+        payload_certifier = payload.get("certifier")
+        structured_certifier = any(
+            dependency.get("relation") in EVIDENCE_ONLY_RELATIONS
+            for dependency in state.dependency_hashes
         )
-        build_scope = _certification_input_scope_builder(
-            graph, states, repo_root=root,
-            certification_basis_paths=selected_basis_paths,
+        currentness_identity = lambda identity: _certifier_currentness_identity(
+            identity, structured=structured_certifier
         )
-        scopes = {node_id: build_scope((node_id,)) for node_id in graph.nodes}
-        # Observe each shared authority/basis path once, not once per node.
-        path_readiness = check_commit_readiness_by_path(
-            snapshot,
-            tuple(sorted({path for scope in scopes.values() for path in scope.tracked_paths})),
-            {}, allow_non_atomic=allow_non_atomic,
-        )
-        node_tracked_inputs_clean = {
-            node_id: snapshot is not None and all(path_readiness[path].stamp_worthy for path in scope.tracked_paths)
-            for node_id, scope in scopes.items()
-        }
-    except (CertificationHashError, OSError, TypeError, ValueError):
-        pass
+        if not isinstance(payload_certifier, Mapping) or (
+            currentness_identity(payload_certifier)
+            != currentness_identity(certifier_identity)
+        ):
+            concerns.append("certifier-mismatch")
+        if payload.get("checks") != list(expected_checks):
+            concerns.append("checks-mismatch")
+    return CertificateNodeCurrentness(
+        node_id=node_id,
+        current=not concerns,
+        concerns=tuple(dict.fromkeys(concerns)),
+        certificate=certificate,
+        local_hash_changed=local_hash_changed,
+        declaration_changed=declaration_changed,
+        blueprint_path=blueprint_path,
+        input_files=input_files,
+        dependencies=dependencies,
+        facet_drift=facet_drift,
+    )
 
-    for node_id, node in sorted(graph.nodes.items()):
-        concerns: list[str] = []
-        local_hash_changed = False
-        declaration_changed = False
-        blueprint_path: str | None = None
-        input_files: tuple[CertificateInputDelta, ...] = ()
-        dependencies: tuple[CertificateDependencyDelta, ...] = ()
-        facet_drift: tuple[CertificateFacetDrift, ...] = ()
-        if not node_tracked_inputs_clean[node_id]:
-            concerns.append("source-commit-input-mismatch")
-        certificate: Mapping[str, object] | None = None
+
+def _resolve_certificate_dependencies(
+    local: Mapping[str, CertificateNodeCurrentness],
+    states: Mapping[str, NodeHashState],
+    *,
+    require_closed: bool = True,
+) -> dict[str, CertificateNodeCurrentness]:
+    """Propagate dependency currentness through already checked local records."""
+
+    children: dict[str, set[str]] = {node_id: set() for node_id in local}
+    for node_id in local:
         state = states.get(node_id)
         if not isinstance(state, NodeHashState):
-            local[node_id] = CertificateNodeCurrentness(
-                node_id,
-                False,
-                ("derived-state-unavailable",),
-                None,
-            )
-            continue
-        path = certificate_log_path(node)
-        if not path.exists():
-            local[node_id] = CertificateNodeCurrentness(
-                node_id,
-                False,
-                ("missing-certificate-log",),
-                None,
-            )
-            continue
-        try:
-            entries = parse_certificate_log(
-                read_regular_file_bytes(
-                    path,
-                    allowed_root=node.module_root,
-                    allow_non_atomic=allow_non_atomic,
-                ),
-                public_key_root,
-                allow_non_atomic=allow_non_atomic,
-            )
-        except (CertificateLogError, AtomicWriteError, OSError, TypeError, ValueError):
-            local[node_id] = CertificateNodeCurrentness(
-                node_id,
-                False,
-                ("suspect-certificate-log",),
-                None,
-            )
-            continue
-        certificate = entries[-1]
-        try:
-            for entry in entries:
-                validator.validate(entry)
-        except jsonschema.ValidationError:
-            concerns.append("invalid-certificate-schema")
-        payload = certificate.get("payload")
-        if not isinstance(payload, Mapping):
-            concerns.append("invalid-certificate-schema")
-        else:
-            current_manifest = [dict(entry) for entry in state.input_manifest]
-            current_dependencies = [dict(entry) for entry in state.dependency_hashes]
-            certified_manifest = payload.get("input_manifest", [])
-            certified_dependencies = payload.get("dependencies", [])
-            facet_capable = (
-                payload.get("certificate_schema_version") == 3
-                and bool(state.facets)
-            )
-            if not facet_capable:
-                input_files = _input_file_deltas(
-                    certified_manifest,
-                    current_manifest,
+            if require_closed:
+                raise CertificationHashError(
+                    f"missing canonical certification state for {node_id}"
                 )
-                dependencies = _dependency_deltas(
-                    certified_dependencies,
-                    current_dependencies,
-                )
-                local_hash_changed = payload.get("node_hash") != state.node_hash
-                current_blueprint_path = _relative_path(
-                    node.blueprint_path,
-                    root,
-                )
-                blueprint_input_changed = any(
-                    delta.path == current_blueprint_path for delta in input_files
-                )
-                declaration_changed = (
-                    blueprint_input_changed
-                    or (
-                        local_hash_changed
-                        and certified_manifest == current_manifest
-                        and certified_dependencies == current_dependencies
-                    )
-                )
-                blueprint_path = (
-                    current_blueprint_path
-                    if declaration_changed
-                    else None
-                )
-            if payload.get("certificate_schema_version") != 3:
-                concerns.append("legacy-certificate-payload")
-            else:
-                concerns.extend(
-                    _facet_currentness_concerns(payload.get("facets"), state)
-                )
-                facet_drift = _facet_drift(
-                    payload.get("facets"),
-                    state,
-                    blueprint_path=_relative_path(node.blueprint_path, root),
-                )
-            if payload.get("subject") != _expected_subject(node, root):
-                concerns.append("subject-mismatch")
-            if payload.get("input_manifest") != [dict(entry) for entry in state.input_manifest]:
-                concerns.append("input-manifest-mismatch")
-            if payload.get("node_hash") != state.node_hash:
-                concerns.append("node-hash-mismatch")
-            if payload.get("dependencies") != [dict(entry) for entry in state.dependency_hashes]:
-                concerns.append("dependency-mismatch")
-            if payload.get("certification_basis_hash") != state.certification_basis_hash:
-                concerns.append("certification-basis-mismatch")
-            payload_certifier = payload.get("certifier")
-            structured_certifier = any(
-                dependency.get("relation") in EVIDENCE_ONLY_RELATIONS
-                for dependency in state.dependency_hashes
-            )
-            currentness_identity = lambda identity: _certifier_currentness_identity(
-                identity, structured=structured_certifier
-            )
-            if not isinstance(payload_certifier, Mapping) or (
-                currentness_identity(payload_certifier)
-                != currentness_identity(certifier_identity)
-            ):
-                concerns.append("certifier-mismatch")
-            if payload.get("checks") != _expected_checks(node_id, checks_by_node):
-                concerns.append("checks-mismatch")
-        local[node_id] = CertificateNodeCurrentness(
-            node_id=node_id,
-            current=not concerns,
-            concerns=tuple(dict.fromkeys(concerns)),
-            certificate=certificate,
-            local_hash_changed=local_hash_changed,
-            declaration_changed=declaration_changed,
-            blueprint_path=blueprint_path,
-            input_files=input_files,
-            dependencies=dependencies,
-            facet_drift=facet_drift,
-        )
-
-    children: dict[str, set[str]] = {node_id: set() for node_id in graph.nodes}
-    for node_id, state in states.items():
-        if node_id not in children or not isinstance(state, NodeHashState):
             continue
         for dependency in state.dependency_hashes:
             if dependency.get("relation") in EVIDENCE_ONLY_RELATIONS:
                 continue
             target = dependency.get("target") if isinstance(dependency, Mapping) else None
+            if require_closed and target not in children:
+                raise CertificationHashError(
+                    f"selected certification scope omits dependency of {node_id}: {target}"
+                )
             if isinstance(target, str) and target in children:
                 children[node_id].add(target)
 
@@ -1013,12 +981,97 @@ def evaluate_certificate_currentness(
         resolved[node_id] = result
         return result
 
-    for node_id in sorted(graph.nodes):
+    for node_id in local:
         resolve(node_id)
+    return resolved
+
+
+def evaluate_certificate_currentness(
+    graph: RepositoryBlueprintGraph,
+    states: Mapping[str, NodeHashState],
+    *,
+    repo_root: Path,
+    public_key_root: Path,
+    source_commit: str,
+    certifier_identity: Mapping[str, object],
+    checks_by_node: Mapping[str, Sequence[Mapping[str, object]]],
+    certification_basis_paths: Sequence[Path] | None = None,
+    schema_root: Path | None = None,
+    allow_non_atomic: bool = False,
+    requested: Sequence[str] | None = None,
+) -> CertificateCurrentnessReport:
+    """Evaluate certificate logs for the requested closure, or the whole graph.
+
+    InstantiationsFromRepo
+    ----------------------
+    .hashing._certification_input_scope_builder:
+      why:
+        constructs: "Builds the shared authority scope used for v6 node readiness."
+    """
+    if graph.schema_version != 6:
+        raise CertificationHashError(
+            "certification currentness requires a schema v6 graph"
+        )
+
+    selected = (
+        tuple(sorted(graph.nodes))
+        if requested is None
+        else certification_target_postorder(graph, states, requested)
+    )
+
+    root = Path(repo_root).resolve()
+    selected_schema_root = Path(schema_root) if schema_root is not None else _default_schema_root()
+    validator = schema_validator(load_schema(selected_schema_root / "certificate.schema.json"))
+    node_tracked_inputs_clean = {
+        node_id: False for node_id in selected
+    }
+    try:
+        snapshot = capture_git_snapshot(root)
+        selected_basis_paths = (
+            tuple(certification_basis_paths)
+            if certification_basis_paths is not None
+            else resolve_certification_basis_paths(
+                root,
+                allow_non_atomic=allow_non_atomic,
+            )
+        )
+        build_scope = _certification_input_scope_builder(
+            graph, states, repo_root=root,
+            certification_basis_paths=selected_basis_paths,
+        )
+        scopes = {node_id: build_scope((node_id,)) for node_id in selected}
+        # Observe each shared authority/basis path once, not once per node.
+        path_readiness = check_commit_readiness_by_path(
+            snapshot,
+            tuple(sorted({path for scope in scopes.values() for path in scope.tracked_paths})),
+            {}, allow_non_atomic=allow_non_atomic,
+        )
+        node_tracked_inputs_clean = {
+            node_id: snapshot is not None and all(path_readiness[path].stamp_worthy for path in scope.tracked_paths)
+            for node_id, scope in scopes.items()
+        }
+    except (CertificationHashError, OSError, TypeError, ValueError):
+        pass
+
+    local = {
+        node_id: _evaluate_node_currentness(
+            graph.nodes[node_id], states.get(node_id),
+            repo_root=root, public_key_root=public_key_root,
+            certifier_identity=certifier_identity,
+            expected_checks=_expected_checks(node_id, checks_by_node),
+            tracked_inputs_clean=node_tracked_inputs_clean[node_id],
+            validator=validator, allow_non_atomic=allow_non_atomic,
+        )
+        for node_id in selected
+    }
+
+    resolved = _resolve_certificate_dependencies(
+        local, states, require_closed=requested is not None,
+    )
     report = CertificateCurrentnessReport(nodes=resolved)
     return CertificateCurrentnessReport(
         nodes=resolved,
-        stale_worklist=certificate_stale_worklist(graph, states, report),
+        stale_worklist=certificate_stale_worklist(graph, states, report, requested),
     )
 
 
@@ -1068,6 +1121,7 @@ class RepositoryCertificationState:
     certification_basis_hash: str
     certifier_identity: Mapping[str, object]
     currentness: CertificateCurrentnessReport
+    certification_basis_paths: tuple[Path, ...] = ()
 
 
 class RepositoryCertificationError(ValueError):
@@ -1080,8 +1134,9 @@ def derive_repository_certification_state(
     public_key_root: Path | None = None,
     schema_root: Path | None = None,
     allow_non_atomic: bool = False,
+    requested: Sequence[str] | None = None,
 ) -> RepositoryCertificationState:
-    """Derive the sole repository-backed certification state used by readers."""
+    """Derive full repository evidence with optionally scoped currentness."""
 
     root = Path(repo_root).resolve()
     selected_schema_root = (
@@ -1146,6 +1201,7 @@ def derive_repository_certification_state(
             certification_basis_paths=basis_paths,
             schema_root=selected_schema_root,
             allow_non_atomic=allow_non_atomic,
+            requested=requested,
         )
     except RepositoryCertificationError:
         raise
@@ -1164,6 +1220,7 @@ def derive_repository_certification_state(
         certification_basis_hash=basis_hash,
         certifier_identity=certifier_identity,
         currentness=currentness,
+        certification_basis_paths=tuple(basis_paths),
     )
 
 

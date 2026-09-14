@@ -51,6 +51,12 @@ that checkout. Installed-source adapters are read-only drift diagnostics;
 installing a plugin does not add its modules to the package's certification
 graph.
 
+For explicit certification targets, currentness evaluation authenticates only
+those targets and their canonical dependency closure. It retains complete graph
+and hash derivation and the existing certification-authority input checks.
+Unrelated certificate histories are not read for this evaluation. Repository-wide
+drift readers and certification without explicit targets still evaluate every node.
+
 ## Nodes and dependencies
 
 Version 6 has two authored node types:
@@ -184,7 +190,9 @@ the selected nodes and prerequisites, the certification basis, the semantic
 audit and signing authorities, the certification Voyage's machinery dependencies,
 and the declarations and registrations needed to resolve them. Unrelated tracked
 edits do not block certification or make a certificate stale. Complete graph
-validation and repository mechanical validators remain separate prerequisites.
+validation and mechanical validators remain separate prerequisites. Certification
+selects whole-file subjects from the requested nodes and their canonical
+prerequisites; checks requiring broader context retain the complete repository.
 The Voyage binds this scope before dispatch; signing rechecks the same identity,
 including its membership, around certificate appends. Currentness uses the same
 scope for each node. The writer accepts only version-6 nodes.
@@ -313,7 +321,8 @@ that the newest entries were removed.
 
 A certificate is current only when all of the following hold:
 
-- its envelope and payload validate and its signature verifies under `key_id`;
+- its envelope and payload validate, its signature verifies under `key_id`, and
+  the latest entry uses the active signing key;
 - its subject identifies the current node, and its tracked inputs are clean and
   reproducible at HEAD; `source_commit` records issuance provenance and need
   not equal the current HEAD;
@@ -405,6 +414,69 @@ dependency-first node order (including structural child modules), construct
 bounded packets, and fill a bounded pool of semantic workers. There is no
 separate scheduler state or public scheduler operation.
 
+For stale targets, initialization runs graph-dependent validators, deterministic
+checks and the two-observation route-smoke gate once, reusing the canonical graph
+already loaded for that observation. Their subjects are only the nodes requiring
+renewal, in canonical DFS order; current dependencies remain reference context.
+The shared mechanical receipt records those `validation_node_ids` and
+`validation_paths`, the sorted union of their input manifests.
+Before a stale node's first semantic audit, the machine runs the remaining
+validators for that node alone. It retains one signed local receipt for the
+active node and reuses it across that node's audit turns. Mechanical-only renewal
+also requires this local gate before signing. Current nodes skip both groups.
+Validators select their subjects before reading or parsing: whole selected
+files, selected node declarations, or selected module contracts. Selecting a
+runtime source does not select its owner's other sources or skill document.
+The complete graph remains reference context; filename collisions inspect the
+selected path's peers, and selected documents/standards retain the references
+needed to check their contracts. Repository documentation and catalog freshness
+checks apply only when those aggregate artifacts are selected.
+
+The split uses each validator's existing `REQUIRES_BLUEPRINT_GRAPH` declaration.
+Mixed graph/file validators stay in the shared group. Local validators do not
+load the shared graph; selected documents may still read their required reference
+context. Signing requires both shared coverage and the exact node's local pass.
+The next stale node replaces the local receipt, using the same preparation and
+Reckoning rather than another scheduler or persisted graph cache.
+Independent standalone exact-node/module calls retain their self-validating gate
+over the selected dependency closure. Neither path claims that unrelated
+repository subjects passed validation.
+The certification-specific mechanical helper requires explicit file and node
+subjects. The generic repository runner retains its unscoped mode for CI and
+ordinary repository checks.
+
+The canonical runner accepts `validation_paths` and `validation_node_ids`
+together, or `--validation-scope-file` containing
+`{"paths": [...], "node_ids": [...]}`. Omitted scope keeps full validation;
+two empty lists select no conformance subjects. Ordinary repository checks and
+commit hooks keep their existing full scope and both validator groups. The runner
+can select the graph or local group with `--validator-group graph|local`; this is
+an execution filter, not an option to bypass a certification prerequisite.
+Graph loading and the existing
+preparation fingerprint/freeze guards retain their existing safety boundaries.
+Preparation also passes that graph through private stdin to each of the two
+fresh route-smoke subprocesses. Both still load and trace the selected runtime
+interfaces and compare their dependency results. The standalone signer retains
+its independent graph loads; callers cannot supply serialized graph files or
+persisted graph caches to skip checks.
+It seals the selected claims, static audit packets and shared mechanical receipt with
+the existing signing key. The seal is bound to the Charter, repository identity,
+commit, certification scope, and a content-and-membership fingerprint of the
+repository inputs and validator runtime. It contains no semantic verdict.
+An already-current request skips this preparation and does not provision a key.
+
+Each continuation authenticates the seal, checks current scoped Git and file
+evidence, and authenticates the selected certificate histories. Unchanged inputs
+reuse the shared receipt without rebuilding the graph, and reuse the active node's
+local receipt without rerunning its checks. Broader input changes trigger a
+canonical observation and fresh shared checks and discard the local receipt;
+the active node's local checks must pass again before audit continuation or signing.
+Changed audited inputs or scope reject the run. Certificate logs are authenticated
+separately; generated Voyage state is outside the fingerprint. Pooled reviews
+remain validator inputs and are published after all certificates are current.
+Any fingerprint change during an append fails that attempt, even an unrelated
+edit, because the mechanical receipt no longer covers the live inputs.
+
 The dedicated dispatcher interpreter must also have the certifier's declared
 Python packages installed; refreshing the plugin does not provision them. The
 package authority is `node-certify._rtx.source.rtx-certifier`'s
@@ -415,7 +487,10 @@ Keep the required repository validators and interpreter unchanged. A failed
 mechanical gate reports its exit code and captured stdout/stderr in the terminal
 failure reason; repair the cause before starting a fresh Voyage.
 
-The controller initializes once, then uses atomic `next` only. All stateful
+The controller chains initialization and the first atomic `next` in one tool
+execution, then uses `next` only. It dispatches returned packets immediately;
+monitoring reads recorded timings without adding controller inspection turns.
+All stateful
 operations require `--repository` with the reviewed checkout. The installed
 interface delegates through the existing confined runner into that checkout,
 using its shared runtime and keeping Voyage state beside its certifier. Candidate
@@ -430,13 +505,16 @@ Packets contain actual passing prerequisite reports or machine-authenticated
 certificate claims and selected prerequisite declarations/contracts, rather than
 bare IDs or pass labels.
 
-After all required audits for one exact node pass, the machine calls the exact
-signer with the bound repository, commit, canonical node hash, input manifest, dependency hashes, facets and basis
-hash. Local node hashes alone do not bind dependency state.
-The signer checks that identity inside its normal frozen-input path, requires
-prerequisites current, signs at most that node and rechecks currentness. It never
+After all required audits for one exact node pass, the machine supplies the
+authenticated prepared claims to the existing guarded append writer. Those claims
+bind the repository, commit, canonical node hash, input manifest, dependency
+hashes, facets and basis hash. Local node hashes alone do not bind dependency state.
+The writer checks frozen inputs, active signing key and prerequisite certificate
+identities around the append, signs at most that node and verifies the result. It never
 recursively issues unreviewed stale dependencies. Source interface facets precede
 the source audit and signing; child nodes precede module audit and signing.
+The standalone exact-node signer retains its complete self-validating path;
+there is no public option to skip mechanical checks or submit prepared claims.
 
 Raw JSON parsing, schema and consumed-dependency validation are machine-owned.
 Malformed, rejected, aborted, lost or failed work terminates the run and the
