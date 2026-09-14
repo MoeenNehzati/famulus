@@ -885,6 +885,210 @@ def test_repository_graph_rejects_write_into_another_module_authority(
         load_repository_blueprint_graph(tmp_path, schema_root=SCHEMA_ROOT)
 
 
+def test_interface_security_level_matches_direct_and_used_io(tmp_path: Path) -> None:
+    _write_v4_module(tmp_path, "provider-skill", allow_callers=["consumer-skill"])
+    _write_v4_module(tmp_path, "consumer-skill", allow_callers=[])
+    provider_path = tmp_path / "skills/provider-skill/blueprints/worker.yaml"
+    provider = yaml.safe_load(provider_path.read_text(encoding="utf-8"))
+    provider_interface = provider["interfaces"][
+        "provider-skill.source.worker.interface.run"
+    ]
+    provider_interface["contract"]["direct_io"]["network"].append(
+        {
+            "id": "smtp",
+            "medium": "network-request",
+            "access": "send",
+            "content": "email",
+            "sensitivity": "user-private",
+            "system": "smtp",
+        }
+    )
+    _write_yaml(provider_path, provider)
+    consumer_path = tmp_path / "skills/consumer-skill/blueprints/worker.yaml"
+    consumer = yaml.safe_load(consumer_path.read_text(encoding="utf-8"))
+    use = {"interface": "provider-skill.interface.run", "version": 1}
+    consumer["uses_interfaces"] = [use]
+    consumer_interface = consumer["interfaces"][
+        "consumer-skill.source.worker.interface.run"
+    ]
+    consumer_interface["uses_interfaces"] = [use]
+    _write_yaml(consumer_path, consumer)
+
+    graph = load_repository_blueprint_graph(tmp_path, schema_root=SCHEMA_ROOT)
+    assert graph.interface_security_levels[
+        "provider-skill.source.worker.interface.run"
+    ] == 2
+    assert graph.interface_security_levels[
+        "consumer-skill.source.worker.interface.run"
+    ] == 2
+
+
+def test_interface_security_level_requires_owned_local_write(tmp_path: Path) -> None:
+    _write_v4_module(tmp_path, "writer-skill", allow_callers=[])
+    source_path = tmp_path / "skills/writer-skill/blueprints/worker.yaml"
+    source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    interface = source["interfaces"]["writer-skill.source.worker.interface.run"]
+    interface["contract"]["direct_io"]["writes"].append(
+        {
+            "id": "state",
+            "medium": "local-filesystem",
+            "access": "write",
+            "content": "state",
+            "sensitivity": "user-private",
+            "path": "$home/.config/writer-skill/state.json",
+            "path_match": "exact",
+        }
+    )
+    module_path = tmp_path / "skills/writer-skill/blueprint.yaml"
+    module = yaml.safe_load(module_path.read_text(encoding="utf-8"))
+    module["authority"]["owns_filesystem"] = [
+        {
+            "match": "exact",
+            "path": "$home/.config/writer-skill/state.json",
+            "allowed_readers": [],
+        }
+    ]
+    _write_yaml(module_path, module)
+
+    _write_yaml(source_path, source)
+    graph = load_repository_blueprint_graph(tmp_path, schema_root=SCHEMA_ROOT)
+    assert graph.interface_security_levels["writer-skill.source.worker.interface.run"] == 2
+
+    contract = interface["contract"]
+    contract["outcomes"][0]["effects"] = ["write-state"]
+    contract["execution"].update(
+        {
+            "state_effect": "mutating",
+            "effects": [
+                {
+                    "id": "write-state",
+                    "direct_io_ref": "state",
+                    "action": "update",
+                    "value_source": {"kind": "direct-io", "direct_io_ref": "state"},
+                    "may_occur_in_outcomes": ["success"],
+                    "confirmation_evidence": {
+                        "kind": "direct-io",
+                        "direct_io_ref": "state",
+                    },
+                    "reversibility": {"reversible": "The state can be replaced."},
+                }
+            ],
+            "mutation_safety": {
+                "atomicity": {"atomic": "One file replacement."},
+                "concurrent_invocations": {"serialized": "The writer serializes updates."},
+                "idempotency": {"idempotent": "The same state replaces itself."},
+                "on_uncertain_completion": {"verify_then_decide": "Read the state."},
+                "partial_effects_on_failure": {"impossible": "Replacement is atomic."},
+                "rollback_on_failure": {"available": "Restore the prior state."},
+            },
+        }
+    )
+    _write_yaml(source_path, source)
+    graph = load_repository_blueprint_graph(tmp_path, schema_root=SCHEMA_ROOT)
+    assert graph.interface_security_levels["writer-skill.source.worker.interface.run"] == 1
+
+
+def test_interface_security_level_rejects_mismatched_read_medium(tmp_path: Path) -> None:
+    _write_v4_module(tmp_path, "reader-skill", allow_callers=[])
+    source_path = tmp_path / "skills/reader-skill/blueprints/worker.yaml"
+    source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    interface = source["interfaces"]["reader-skill.source.worker.interface.run"]
+    interface["contract"]["direct_io"]["network"].append(
+        {
+            "id": "bad-download",
+            "medium": "local-system",
+            "access": "download",
+            "content": "host state",
+            "sensitivity": "user-private",
+        }
+    )
+    _write_yaml(source_path, source)
+
+    graph = load_repository_blueprint_graph(tmp_path, schema_root=SCHEMA_ROOT)
+    assert graph.interface_security_levels["reader-skill.source.worker.interface.run"] == 2
+
+
+def test_interface_security_level_allows_remote_filesystem_read(tmp_path: Path) -> None:
+    _write_v4_module(tmp_path, "reader-skill", allow_callers=[])
+    source_path = tmp_path / "skills/reader-skill/blueprints/worker.yaml"
+    source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    interface = source["interfaces"]["reader-skill.source.worker.interface.run"]
+    interface["contract"]["direct_io"]["reads"].append(
+        {
+            "id": "remote-file",
+            "medium": "remote-filesystem",
+            "access": "read",
+            "content": "remote document",
+            "sensitivity": "user-private",
+        }
+    )
+    _write_yaml(source_path, source)
+
+    graph = load_repository_blueprint_graph(tmp_path, schema_root=SCHEMA_ROOT)
+    assert graph.interface_security_levels["reader-skill.source.worker.interface.run"] == 0
+
+
+def test_interface_security_level_rejects_mutating_read_auth(tmp_path: Path) -> None:
+    _write_v4_module(tmp_path, "reader-skill", allow_callers=[])
+    source_path = tmp_path / "skills/reader-skill/blueprints/worker.yaml"
+    source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    interface = source["interfaces"]["reader-skill.source.worker.interface.run"]
+    interface["contract"]["direct_io"]["network"].append(
+        {
+            "id": "auth-read",
+            "medium": "network-request",
+            "access": "read",
+            "content": "account metadata",
+            "sensitivity": "user-private",
+            "auth": {"kind": "gmail-oauth", "mode": "creates"},
+        }
+    )
+    _write_yaml(source_path, source)
+
+    graph = load_repository_blueprint_graph(tmp_path, schema_root=SCHEMA_ROOT)
+    assert graph.interface_security_levels["reader-skill.source.worker.interface.run"] == 2
+
+
+def test_interface_security_level_rejects_mutating_response_effect(tmp_path: Path) -> None:
+    _write_v4_module(tmp_path, "reader-skill", allow_callers=[])
+    source_path = tmp_path / "skills/reader-skill/blueprints/worker.yaml"
+    source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    interface = source["interfaces"]["reader-skill.source.worker.interface.run"]
+    contract = interface["contract"]
+    contract["outcomes"][0]["effects"] = ["send"]
+    contract["execution"].update(
+        {
+            "state_effect": "mutating",
+            "effects": [
+                {
+                    "id": "send",
+                    "direct_io_ref": "stdout",
+                    "action": "send",
+                    "value_source": {"kind": "direct-io", "direct_io_ref": "stdout"},
+                    "may_occur_in_outcomes": ["success"],
+                    "confirmation_evidence": {
+                        "kind": "direct-io",
+                        "direct_io_ref": "stdout",
+                    },
+                    "reversibility": {"irreversible": "The message cannot be recalled."},
+                }
+            ],
+            "mutation_safety": {
+                "atomicity": {"per_effect_only": "One send."},
+                "concurrent_invocations": {"safe": "Independent sends."},
+                "idempotency": {"non_idempotent": "Each call sends."},
+                "on_uncertain_completion": {"stop": "Do not retry."},
+                "partial_effects_on_failure": {"possible": "The send may finish."},
+                "rollback_on_failure": {"unavailable": "No recall."},
+            },
+        }
+    )
+    _write_yaml(source_path, source)
+
+    graph = load_repository_blueprint_graph(tmp_path, schema_root=SCHEMA_ROOT)
+    assert graph.interface_security_levels["reader-skill.source.worker.interface.run"] == 2
+
+
 @pytest.mark.parametrize(
     ("locator", "make_symlink", "match"),
     [

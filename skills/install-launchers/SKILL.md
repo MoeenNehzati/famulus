@@ -11,10 +11,11 @@ tools:
 
 Executable Interfaces:
 
-Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+Send the required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
 - `install-launchers._rtx.interface.agent-launchers` — Install or repair only an explicit interactive launcher subset using caller-selected Python and plugin values.
   - Caller: `install-launchers`
   - Version: 1
+  - Security level: 2
   - Alternative: `setup`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--agents": "LIST", "--bin-dir": "DIR", "--canonical-python": "FILE", "--claude-home": "DIR", "--codex-home": "DIR", "--default-llm": "claude|codex", "--dry-run": true, "--home": "DIR", "--mode": "development|plugin", "--plugin-root": "DIR"}, "positionals": [], "stdin": null}

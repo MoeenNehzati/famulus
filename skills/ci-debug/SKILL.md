@@ -8,10 +8,11 @@ description: Use when CI history needs analysis, a local branch needs exact-SHA 
 
 Executable Interfaces:
 
-Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+Send the required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
 - `ci-debug._rtx.interface.fetch-github-actions-history` — Fetch one bounded GitHub Actions workflow history with complete attempt enumeration and frozen Git provenance into a private snapshot.
   - Caller: `ci-debug`
   - Version: 1
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--branch": "BRANCH", "--event": "EVENT", "--repo-root": "REPO", "--run-limit": "N", "--since": "ISO_8601", "--snapshot-dir": "NEW_DIR", "--timeout": "SECONDS", "--workers": "N", "--workflow": "WORKFLOW"}, "positionals": [], "stdin": null}
@@ -19,6 +20,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `ci-debug._rtx.interface.report-ci-runtime-hotspots` — Report descriptive API timing observed job execution envelopes job-minutes and heuristic repeated-step hotspots from one snapshot.
   - Caller: `ci-debug`
   - Version: 1
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--report-dir": "NEW_DIR", "--snapshot-dir": "SNAPSHOT"}, "positionals": [], "stdin": null}
@@ -26,6 +28,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `ci-debug._rtx.interface.report-test-failures-between-green-runs` — Report one canonical test incidence per complete green-to-green episode with recurrence bounds frozen provenance and explicit coverage gaps.
   - Caller: `ci-debug`
   - Version: 1
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--report-dir": "NEW_DIR", "--snapshot-dir": "SNAPSHOT"}, "positionals": [], "stdin": null}
@@ -33,6 +36,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `ci-debug._rtx.interface.run-ci` — Start or poll one durable complete remote CI matrix for an exact pushed candidate.
   - Caller: `ci-debug`
   - Version: 2
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--context": "DIR", "--expected-sha": "SHA", "--ref": "REF", "--repo-root": "REPO", "--timeout": "SECONDS"}, "positionals": [], "stdin": null}
@@ -40,6 +44,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `ci-debug._rtx.interface.run-targeted-tests` — Run one selected failure set or complete matrix element for an exact candidate.
   - Caller: `ci-debug`
   - Version: 1
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--context": "DIR", "--expected-sha": "SHA", "--jobs": "N", "--os": "OS", "--profile": "PROFILE", "--ref": "REF", "--repo-root": "REPO", "--selector": "NODE", "--task": "TASK", "--timeout": "SECONDS"}, "positionals": [], "stdin": null}

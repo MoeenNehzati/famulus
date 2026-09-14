@@ -9,10 +9,11 @@ description: >-
 
 Executable Interfaces:
 
-Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+Send the required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
 - `send-feedback._rtx.interface.check-route` — Report the configured feedback repository and which delivery route is currently available.
   - Caller: `send-feedback`
   - Version: 1
+  - Security level: 0
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": [], "stdin": null}
@@ -20,6 +21,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 - `send-feedback._rtx.interface.file-issue` — File a reviewed report as a public issue, or return a prepared submission URL when the issue-filing command is unavailable.
   - Caller: `send-feedback`
   - Version: 1
+  - Security level: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--body-file": "path", "--title": "title"}, "positionals": [], "stdin": null}

@@ -224,7 +224,7 @@ def client_status(home: Path, *, secret_backend=None) -> dict[str, object]:
                 return {
                     **_result("needs-migration", "desktop", path),
                     "remediation": (
-                        "Call famulus_dispatcher.invoke with caller='connect-google', "
+                        "Call famulus_dispatcher.invoke_security_2 with caller='connect-google', "
                         "interface='connect-google._rtx.interface.install-client', "
                         "version=1, and arguments={\"options\": "
                         "{\"--from-json\": \"PRIVATE_DOWNLOADED_CLIENT.json\", "

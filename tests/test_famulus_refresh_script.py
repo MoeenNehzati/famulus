@@ -352,6 +352,7 @@ def test_refresh_restores_settings_even_when_install_fails(
         "enabled": False,
         "mcp_servers": {"famulus_dispatcher": {"tools": {
             "invoke": {"approval_mode": "approve"},
+            "invoke_security_1": {"approval_mode": "ask"},
         }}},
     }
     permissions = {"allow": ["mcp__plugin_famulus_famulus_dispatcher__invoke"], "deny": ["Bash(rm *)"]}
@@ -359,7 +360,9 @@ def test_refresh_restores_settings_even_when_install_fails(
         config.write_text(
             '[plugins."famulus@nullkit"]\nenabled = false\n'
             '[plugins."famulus@nullkit".mcp_servers.famulus_dispatcher.tools.invoke]\n'
-            'approval_mode = "approve"\n', encoding="utf-8",
+            'approval_mode = "approve"\n'
+            '[plugins."famulus@nullkit".mcp_servers.famulus_dispatcher.tools.invoke_security_1]\n'
+            'approval_mode = "ask"\n', encoding="utf-8",
         )
     else:
         config.write_text(json.dumps({
@@ -404,6 +407,11 @@ elif sys.argv[1:3] in (["plugin", "add"], ["plugin", "install"]):
     assert result.returncode == install_status, result.stderr
     if host == "codex":
         restored = json.loads(config.with_suffix(".restored.json").read_text())
+        preferences["mcp_servers"]["famulus_dispatcher"]["tools"] = {
+            "invoke_security_0": {"approval_mode": "approve"},
+            "invoke_security_1": {"approval_mode": "ask"},
+            "invoke_security_2": {"approval_mode": "approve"},
+        }
         assert restored == {
             "keyPath": 'plugins."famulus@nullkit"',
             "value": preferences, "mergeStrategy": "replace",

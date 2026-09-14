@@ -3,22 +3,19 @@
   "server": "famulus_dispatcher",
   "command": "python",
   "args": ["mcp_launcher.py"],
-  "tool": {
-    "name": "invoke",
-    "required": ["caller", "interface", "version", "arguments"],
-    "optional": {"dry_run": false, "setup_flow_id": null},
-    "arguments": {
-      "positionals": "compact positional argv; empty when options is ordered",
-      "options": {
-        "compact": "mapping of one flag to true or one scalar value; list values are rejected",
-        "ordered": "complete ordered argv list; required for repeated, multi-value, or order-sensitive flags"
-      }
+  "security_tools": [
+    {"name": "invoke_security_0", "security_level": 0},
+    {"name": "invoke_security_1", "security_level": 1},
+    {"name": "invoke_security_2", "security_level": 2}
+  ],
+  "required": ["caller", "interface", "version", "arguments"],
+  "optional": {"dry_run": false, "setup_flow_id": null},
+  "arguments": {
+    "positionals": "compact positional argv; empty when options is ordered",
+    "options": {
+      "compact": "mapping of one flag to true or one scalar value; list values are rejected",
+      "ordered": "complete ordered argv list; required for repeated, multi-value, or order-sensitive flags"
     }
-  },
-  "render_tool": {
-    "name": "invoke_and_render",
-    "wraps": "invoke",
-    "renderer_discovery": "quick_fetch_from_all"
   },
   "fingerprint": [
     "sys.executable",

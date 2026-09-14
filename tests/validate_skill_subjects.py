@@ -19,7 +19,10 @@ def _graph(root):
     nodes = {name: SimpleNamespace(node_id=name, node_type="module", module_root=root / "skills" / name)
              for name in ("demo-skill", "other-skill")}
     nodes["demo-skill.source.runtime"] = SimpleNamespace(node_type="behavioral_source")
-    return SimpleNamespace(nodes=nodes, exports={}, module_parents={}, direct_file_owners={})
+    return SimpleNamespace(
+        nodes=nodes, exports={}, interface_security_levels={},
+        module_parents={}, direct_file_owners={},
+    )
 
 
 def _forbid_read(monkeypatch, forbidden):
@@ -116,7 +119,8 @@ def test_generated_dispatch_check_keeps_exports_but_not_other_documents(tmp_path
     _forbid_read(monkeypatch, other)
     graph = _graph(tmp_path)
     graph.exports = {"demo-skill.interface.run": SimpleNamespace(
-        module_node_id="demo-skill", declaration={"process_binding": {}},
+        module_node_id="demo-skill", source_interface_id=None,
+        declaration={"process_binding": {}},
     )}
     findings = skill_md_dispatch.validate_with_graph(tmp_path, graph, (selected,), ())
     assert len(findings) == 1 and "missing generated blueprint interface block" in findings[0]

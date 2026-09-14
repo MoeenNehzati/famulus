@@ -45,7 +45,7 @@ def _validate_skill_text(
     *,
     all_ids: list[str],
     visible_ids: list[str],
-    dispatcher_targets: list[str],
+    dispatcher_targets: list[str | tuple[str, int]],
 ) -> list[str]:
     errors: list[str] = []
     if not all_ids:
@@ -75,12 +75,13 @@ def _validate_skill_text(
         errors.append(
             f"{skill_md}: generated interface block must not expose raw runtime files"
         )
-    for interface_id in dispatcher_targets:
-        required_metadata = (
-            "famulus_dispatcher.invoke",
-            f"Caller: `{skill_name}`",
-            f"`{interface_id}`",
+    for target in dispatcher_targets:
+        interface_id, security_level = (
+            target if isinstance(target, tuple) else (target, None)
         )
+        required_metadata = (f"Caller: `{skill_name}`", f"`{interface_id}`")
+        if security_level is not None:
+            required_metadata += (f"Security level: {security_level}",)
         if not all(fragment in block for fragment in required_metadata):
             errors.append(
                 f"{skill_md}: generated interface block is missing MCP invocation metadata "
@@ -124,7 +125,12 @@ def _validate_graph(
         ]
         all_ids = [interface_id for interface_id, _export in exports]
         dispatcher_targets = [
-            interface_id
+            (
+                interface_id,
+                graph.interface_security_levels.get(
+                    export.source_interface_id or interface_id
+                ),
+            )
             for interface_id, export in exports
             if isinstance(export.declaration.get("process_binding"), dict)
         ]

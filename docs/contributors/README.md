@@ -52,8 +52,9 @@ graph. Generated `SKILL.md` blocks and repository indexes are refreshed through
 Run it without `--check` only when intentionally refreshing the generated
 artifacts. Do not reach past the interface to the file behind it: the syncer is
 private `_rtx` content. Use the documented dispatcher route from the repository
-environment rather than running that private file directly. Host agents use
-the shared `famulus_dispatcher` MCP server's `invoke` tool for this object.
+environment rather than running that private file directly. Host agents use the
+shared `famulus_dispatcher` MCP server tool matching the generated interface's
+`Security level` for this object.
 
 Cross-skill behavior should go through the dispatcher boundary, not direct
 invocation of another skill's private scripts:
@@ -61,6 +62,9 @@ invocation of another skill's private scripts:
 ```json
 {"caller":"<caller>","interface":"<callee>.interface.<name>","version":1,"arguments":{"positionals":[],"options":{},"stdin":null},"dry_run":false}
 ```
+
+Submit that projection to `famulus_dispatcher.invoke_security_<n>`, where `<n>`
+is the callee interface's generated `Security level`.
 
 ## Validation and Enforcement
 

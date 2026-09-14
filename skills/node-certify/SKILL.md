@@ -9,10 +9,11 @@ description: >-
 
 Executable Interfaces:
 
-Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+Send the required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
 - `node-certify._rtx.interface.certification-voyage` — Initiate and operate one certification Voyage; machines schedule audits, validate raw worker reports and sign exact nodes.
   - Caller: `node-certify`
   - Version: 2
+  - Security level: 2
   - Alternative: `discovery`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--repository": "PATH"}, "positionals": ["help|modes"], "stdin": null}

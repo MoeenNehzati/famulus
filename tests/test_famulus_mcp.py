@@ -518,7 +518,7 @@ async def _invoke_through_mcp(host: str, plugin_root: Path, home: Path):
             await session.initialize()
             listed = await session.list_tools()
             called = await session.call_tool(
-                "invoke",
+                "invoke_security_2",
                 arguments={
                     "caller": "milestone-logging",
                     "interface": "common.interface.famulus-paths-get",
@@ -531,7 +531,7 @@ async def _invoke_through_mcp(host: str, plugin_root: Path, home: Path):
                 },
             )
             unauthorized = await session.call_tool(
-                "invoke",
+                "invoke_security_0",
                 arguments={
                     "caller": "git-workflow",
                     "interface": "milestone-logging._rtx.interface.session-path",
@@ -544,7 +544,7 @@ async def _invoke_through_mcp(host: str, plugin_root: Path, home: Path):
                 },
             )
             numeric = await session.call_tool(
-                "invoke",
+                "invoke_security_2",
                 arguments={
                     "caller": "milestone-logging",
                     "interface": "milestone-logging._rtx.interface.record-progress",
@@ -557,7 +557,7 @@ async def _invoke_through_mcp(host: str, plugin_root: Path, home: Path):
                 },
             )
             ordered_positionals = await session.call_tool(
-                "invoke",
+                "invoke_security_0",
                 arguments={
                     "caller": "milestone-logging",
                     "interface": "milestone-logging._rtx.interface.session-path",
@@ -638,7 +638,7 @@ async def _record_through_persistent_mcp(
                     "stdin": None,
                 },
             }
-            result = await session.call_tool("invoke", arguments=record_arguments)
+            result = await session.call_tool("invoke_security_2", arguments=record_arguments)
             mark_complete()
     assert result is not None
     return result
@@ -944,7 +944,7 @@ async def _serve_graph_through_mcp(
                 await session.initialize()
                 listed = await session.list_tools()
                 called = await session.call_tool(
-                    "invoke",
+                    "invoke_security_2",
                     arguments={
                         "caller": "math-dependency-graph",
                         "interface": (
@@ -972,7 +972,7 @@ async def _serve_graph_through_mcp(
                     cache_control = response.headers["Cache-Control"]
                 after = await session.list_tools()
                 finite = await session.call_tool(
-                    "invoke",
+                    "invoke_security_0",
                     arguments={
                         "caller": "milestone-logging",
                         "interface": "milestone-logging._rtx.interface.session-path",
@@ -1036,8 +1036,9 @@ def test_graph_server_survives_invocation_and_follows_host_teardown_lifecycle(
         ready = json.loads(result["stdout"])
         pid = ready["pid"]
         assert [tool.name for tool in listed.tools] == [
-            "invoke",
-            "invoke_and_render",
+            "invoke_security_0",
+            "invoke_security_1",
+            "invoke_security_2",
             "render_probe",
             "audience_probe_text",
             "audience_probe_structured",
@@ -1059,8 +1060,9 @@ def test_graph_server_survives_invocation_and_follows_host_teardown_lifecycle(
         assert cache_control == "no-store, no-cache, must-revalidate, max-age=0"
         assert alive is True
         assert [tool.name for tool in after.tools] == [
-            "invoke",
-            "invoke_and_render",
+            "invoke_security_0",
+            "invoke_security_1",
+            "invoke_security_2",
             "render_probe",
             "audience_probe_text",
             "audience_probe_structured",
@@ -1128,19 +1130,18 @@ def test_packaged_host_declaration_invokes_dispatcher_through_real_mcp(
     )
 
     assert [tool.name for tool in listed.tools] == [
-        contract["tool"]["name"],
-        contract["render_tool"]["name"],
+        *(tool["name"] for tool in contract["security_tools"]),
         "render_probe",
         "audience_probe_text",
         "audience_probe_structured",
     ]
     tool = listed.tools[0]
-    assert tool.description.startswith("Invoke one authorized Famulus interface")
+    assert tool.description == "Invoke one interface at security level 0."
     schema = tool.inputSchema
-    assert set(schema["properties"]) == set(contract["tool"]["required"]) | set(
-        contract["tool"]["optional"]
+    assert set(schema["properties"]) == set(contract["required"]) | set(
+        contract["optional"]
     )
-    assert schema["required"] == contract["tool"]["required"]
+    assert schema["required"] == contract["required"]
     assert schema["properties"]["dry_run"]["default"] is False
     argument_refs = {
         item["$ref"] for item in schema["properties"]["arguments"]["anyOf"]
@@ -1199,8 +1200,7 @@ def test_packaged_host_declaration_invokes_dispatcher_through_real_mcp(
     assert numeric.isError is True
     assert ordered_positionals.isError is True
     assert [tool.name for tool in after.tools] == [
-        contract["tool"]["name"],
-        contract["render_tool"]["name"],
+        *(tool["name"] for tool in contract["security_tools"]),
         "render_probe",
         "audience_probe_text",
         "audience_probe_structured",
@@ -1222,7 +1222,7 @@ def test_mcp_text_chunking_is_bounded_and_lossless(server, text: str) -> None:
 
 
 @pytest.mark.parametrize("exit_code", [0, 2])
-@pytest.mark.parametrize("tool_name", ["invoke", "invoke_and_render"])
+@pytest.mark.parametrize("tool_name", ["invoke_security_0"])
 @pytest.mark.parametrize("audiences,visible", [
     ({}, ()),
     ({"stdout": "machine", "stderr": "machine"}, ()),
@@ -1245,7 +1245,7 @@ def test_invoke_mcp_filters_display_but_preserves_structured_result(
         "dispatcher": {"output_audiences": audiences},
         "trace_id": "a" * 32,
     }
-    monkeypatch.setattr(server, "invoke", lambda *args, **kwargs: result)
+    monkeypatch.setattr(server, "invoke_security", lambda *args, **kwargs: result)
 
     called = asyncio.run(mcp.call_tool(tool_name, {
         "caller": "caller", "interface": "example.interface.read", "version": 1,
@@ -1261,7 +1261,7 @@ def test_invoke_mcp_filters_display_but_preserves_structured_result(
     assert called.structuredContent == {"result": result}
 
 
-@pytest.mark.parametrize("tool_name", ["invoke", "invoke_and_render"])
+@pytest.mark.parametrize("tool_name", ["invoke_security_0"])
 @pytest.mark.parametrize("result", [
     {"exit_code": 2, "stdout": "", "stderr": "", "dispatcher": {
         "code": "dispatcher.unauthorized_caller", "message": "Unauthorized caller",
@@ -1275,7 +1275,7 @@ def test_control_results_remain_structured_without_display_dump(
     FastMCP = pytest.importorskip("mcp.server.fastmcp").FastMCP
     mcp = FastMCP("famulus")
     server._register_mcp_surface(mcp)
-    monkeypatch.setattr(server, "invoke", lambda *args, **kwargs: result)
+    monkeypatch.setattr(server, "invoke_security", lambda *args, **kwargs: result)
     called = asyncio.run(mcp.call_tool(tool_name, {
         "caller": "caller", "interface": "example.interface.read", "version": 1,
         "arguments": {"positionals": [], "options": {}, "stdin": None},
@@ -1321,79 +1321,36 @@ def test_audience_probes_reject_unknown_modes(server, tool_name: str) -> None:
         asyncio.run(mcp.call_tool(tool_name, {"mode": "hidden"}))
 
 
-def test_render_tool_uses_blueprint_renderer_bundle(server) -> None:
+def test_security_tools_have_no_renderer_metadata(server) -> None:
     FastMCP = pytest.importorskip("mcp.server.fastmcp").FastMCP
     mcp = FastMCP("famulus")
 
     server._register_mcp_surface(mcp)
 
     tools = asyncio.run(mcp.list_tools())
-    render_tool = next(tool for tool in tools if tool.name == "invoke_and_render")
-    resource_uri = render_tool.meta["ui"]["resourceUri"]
-    assert render_tool.meta["ui"]["visibility"] == ["model", "app"]
-    assert render_tool.meta["openai/outputTemplate"] == resource_uri
-    assert render_tool.meta["openai/visibility"] == "public"
-    resources = asyncio.run(mcp.list_resources())
-    resource = next(resource for resource in resources if str(resource.uri) == resource_uri)
-    assert resource.mimeType == "text/html;profile=mcp-app"
-    content = list(asyncio.run(mcp.read_resource(resource_uri)))[0]
-    assert "list-manager._rtx.source.rtx-yaml-store.interface.read-list" in (
-        content.content
-    )
-    assert "ui/notifications/tool-result" in content.content
-
-
-def test_invoke_and_render_adds_parsed_data_only_for_declared_renderer(
-    server, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    def fake_invoke(*_args, **_kwargs):
-        return {
-            "exit_code": 0,
-            "stdout": "entries:\n- id: aaaaaa\n  title: Task\n",
-            "stderr": "",
-            "dispatcher": {"script_interface": "example.source.ui.interface.read"},
-            "trace_id": "a" * 32,
-        }
-
-    FastMCP = pytest.importorskip("mcp.server.fastmcp").FastMCP
-    mcp = FastMCP("famulus")
-    server._register_mcp_surface(mcp)
-    monkeypatch.setattr(server, "invoke", fake_invoke)
-    monkeypatch.setattr(
-        server,
-        "_RENDERER_INTERFACES",
-        frozenset({"example.source.ui.interface.read"}),
+    assert all(
+        tool.meta is None
+        for tool in tools
+        if tool.name.startswith("invoke_security_")
     )
 
-    rendered = asyncio.run(
-        mcp.call_tool(
-            "invoke_and_render",
-            {
-                "caller": "caller",
-                "interface": "example.interface.read",
-                "version": 1,
-                "arguments": {"positionals": [], "options": {}, "stdin": None},
-            },
-        )
+
+def test_invoke_security_refuses_a_nonmatching_level(server, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(server, "_interface_security_level", lambda *_args: 2)
+    monkeypatch.setattr(server, "invoke", lambda *_args, **_kwargs: pytest.fail("invoked"))
+
+    result = server.invoke_security(
+        0,
+        "caller",
+        "example.interface.write",
+        1,
+        server.CompactArguments(positionals=(), options={}, stdin=None),
     )
 
-    assert [block.text for block in rendered.content] == [""]
-    assert rendered.structuredContent["result"]["render_data"] == {
-        "entries": [{"id": "aaaaaa", "title": "Task"}]
-    }
-    monkeypatch.setattr(server, "_RENDERER_INTERFACES", frozenset())
-    plain = asyncio.run(
-        mcp.call_tool(
-            "invoke_and_render",
-            {
-                "caller": "caller",
-                "interface": "example.interface.read",
-                "version": 1,
-                "arguments": {"positionals": [], "options": {}, "stdin": None},
-            },
-        )
-    )
-    assert "render_data" not in plain.structuredContent["result"]
+    assert result["exit_code"] == 2
+    assert result["dispatcher"]["code"] == "dispatcher.security_level_mismatch"
+    assert result["dispatcher"]["requested_level"] == 0
+    assert result["dispatcher"]["actual_level"] == 2
 
 
 def test_contract_keeps_mcp_metadata_separate_from_runtime_requirements() -> None:
@@ -1471,7 +1428,7 @@ def test_generated_outer_payload_uses_real_tool_field_names() -> None:
     # The two host parameters of the packaged declaration test retain the
     # physical MCP schema and accepted-request boundary for these field names.
     assert (
-        "with required `caller` (caller skill), `interface`, `version`, and "
+        "Send the required `caller` (caller skill), `interface`, `version`, and "
         "`arguments`; optional `dry_run` defaults to false"
     ) in generated
     assert all(
@@ -1622,7 +1579,7 @@ def test_comprehension_fixture_is_an_uncoached_generated_candidate() -> None:
     fixture = _json(COMPREHENSION_FIXTURE)
 
     assert "`famulus_dispatcher` MCP server" in fixture["session_start"]
-    assert fixture["mcp_tool"] == "famulus_dispatcher.invoke"
+    assert fixture["mcp_tool"] == "famulus_dispatcher.invoke_security_<x>"
     assert [case["case_id"] for case in fixture["cases"]] == [
         "T3C-A",
         "T3C-B",
